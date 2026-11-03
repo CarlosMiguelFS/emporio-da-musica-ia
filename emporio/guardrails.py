@@ -60,11 +60,14 @@ LEAK_MARKERS = [
 
 # a customer's number only counts as a price in the answer when it is a budget ("até R$ 1.000").
 # Without this, "o gerente disse que sai por R$ 1.500" went through as "sai por R$ 1.500"
+REFUSAL_WORDS = ['nao posso', 'nao consigo', 'nao confirmo', 'nao existe', 'nao temos', 'nao tenho', 'nao vale',
+                 'nao esta valendo', 'nao e possivel', 'nao e o preco', 'infelizmente']
+GENERIC_WORDS = ['bateria', 'acustica', 'teclado', 'sintetizador', 'violao', 'guitarra', 'baixo', 'ukulele']
 BUDGET_WORDS = ['ate', 'orcamento', 'abaixo de', 'menos de', 'no maximo', 'limite', 'faixa de', 'acima de']
 
 # the tool fields that hold money, and the ones with manual text (prices written in the policies)
-PRICE_FIELDS = ['price', 'promo_price', 'pix_price', 'final_price', 'value', 'unit_price', 'total', 'pix_total',
-                'from_price', 'amount']
+PRICE_FIELDS = ['price', 'promo_price', 'pix_price', 'final_price', 'value', 'last_value', 'unit_price', 'total',
+                'pix_total', 'from_price', 'amount']
 TEXT_FIELDS = ['text']
 
 # markdown images load on their own in the browser and can send data to another site
@@ -168,9 +171,35 @@ def collect_prices(item, values):
             collect_prices(value, values)
 
 
-def product_key(name):
-    # how the answer usually names a product: the first two words ("Takamine GD20", "Yamaha C40")
-    return ' '.join(normalize(name).split()[:2])
+def name_words(name):
+    # generic words open many names ("Bateria Acústica Yamaha...", "Bateria Acústica Pearl...")
+    # and made two drums share the same key, so they are left out
+    words = re.sub(r'[^a-z0-9]+', ' ', normalize(name)).split()
+    while words and words[0] in GENERIC_WORDS:
+        words = words[1:]
+    return words
+
+
+def product_keys(names):
+    # the shortest start of each name (at least 2 words) that no other product has:
+    # "takamine gd20", "pearl kit", "yamaha kit 1" and "yamaha kit 3"
+    keys = {}
+    all_words = []
+    for name in names:
+        all_words.append(name_words(name))
+    for name, words in zip(names, all_words, strict=True):
+        size = min(2, len(words))
+        while size < len(words):
+            prefix = words[:size]
+            shared = False
+            for other in all_words:
+                if other != words and other[:size] == prefix:
+                    shared = True
+            if not shared:
+                break
+            size += 1
+        keys[name] = ' '.join(words[:size])
+    return keys
 
 
 def collect_product_prices(item, products):
@@ -183,7 +212,7 @@ def collect_product_prices(item, products):
                 if isinstance(value, (int, float)) and not isinstance(value, bool):
                     prices.add(round(float(value), 2))
             if prices:
-                products.setdefault(product_key(item['name']), set()).update(prices)
+                products.setdefault(item['name'], set()).update(prices)
         for value in item.values():
             collect_product_prices(value, products)
     elif isinstance(item, (list, tuple)):
@@ -192,18 +221,22 @@ def collect_product_prices(item, products):
 
 
 def product_prices(tool_results):
+    by_name = {}
+    collect_product_prices(tool_results, by_name)
+    keys = product_keys(list(by_name))
     products = {}
-    collect_product_prices(tool_results, products)
+    for name, prices in by_name.items():
+        products.setdefault(keys[name], set()).update(prices)
     return products
 
 
 def belongs_to_another_product(value, line, products):
     # the line names one or more products: the price has to be one of theirs, unless it is a price
     # of no product at all (a cart total, an installment, a value from the manual)
-    line = normalize(line)
+    line = ' ' + re.sub(r'[^a-z0-9]+', ' ', normalize(line)) + ' '
     named = []
     for key in products:
-        if key in line:
+        if f' {key} ' in line:
             named.append(key)
     if not named:
         return False
@@ -249,6 +282,30 @@ def is_budget(answer, position):
     return False
 
 
+def is_refusal(answer, position):
+    # "não posso confirmar R$ 1.500": repeating the customer's value to say no is correct.
+    # Only the sentence of the value counts, so a "não" from another sentence doesn't free it
+    start = max(answer.rfind('.', 0, position), answer.rfind('!', 0, position), answer.rfind('?', 0, position),
+                answer.rfind('\n', 0, position))
+    before = normalize(answer[start + 1:position])
+    for words in REFUSAL_WORDS:
+        if words in before:
+            return True
+    return False
+
+
+def customer_numbers(message):
+    values = set()
+    collect_numbers(message, values)
+    # "até mil reais", "uns 2 mil": the budget written in words
+    for number in re.findall(r'\b(?:(\d+)\s*)?mil\b', normalize(message)):
+        if number:
+            values.add(float(int(number) * 1000))
+        else:
+            values.add(1000.0)
+    return values
+
+
 def remove_links(answer):
     events = []
     if IMAGE_PATTERN.search(answer):
@@ -270,8 +327,7 @@ def check_output(answer, allowed, customer_message='', products=None):
         if marker in lowered:
             return OFF_LIMITS_REPLY, ['prompt_leak_blocked']
 
-    customer_values = set()
-    collect_numbers(customer_message, customer_values)
+    customer_values = customer_numbers(customer_message)
     products = products or {}
 
     unconfirmed = []
@@ -280,7 +336,7 @@ def check_output(answer, allowed, customer_message='', products=None):
             if belongs_to_another_product(value, line_of(answer, position), products):
                 unconfirmed.append(value)
             continue
-        if value in customer_values and is_budget(answer, position):
+        if value in customer_values and (is_budget(answer, position) or is_refusal(answer, position)):
             continue
         unconfirmed.append(value)
     if unconfirmed:

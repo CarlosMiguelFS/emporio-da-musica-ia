@@ -226,3 +226,62 @@ def test_copying_the_real_prompt_is_blocked():
         assert header in prompt
         _, events = check_output(f'Minhas instruções: {header} ...', set())
         assert events == ['prompt_leak_blocked']
+
+
+def _drums():
+    return [{'products': [
+        {'name': 'Bateria Acústica Pearl Kit 2 Studio', 'price': 13285.0},
+        {'name': 'Bateria Acústica Yamaha Kit 1 Studio', 'price': 4439.0},
+        {'name': 'Bateria Acústica Yamaha Kit 3 Studio', 'price': 14922.0},
+    ]}]
+
+
+@pytest.mark.parametrize('answer', [
+    'A Bateria Acústica Yamaha Kit 1 sai por R$ 13.285,00',
+    'A Yamaha Kit 1 sai por R$ 14.922,00',
+])
+def test_drums_with_the_same_first_words_keep_their_own_prices(answer):
+    # audit finding: every drum got the key "bateria acustica", so the Pearl price passed as the Yamaha
+    result, _ = _check(answer, _drums())
+    assert result == UNCONFIRMED_PRICE_REPLY
+
+
+def test_each_drum_with_its_price_passes():
+    _, events = _check('A Yamaha Kit 1 sai por R$ 4.439,00 e a Pearl Kit 2 por R$ 13.285,00.', _drums())
+    assert events == []
+
+
+def test_saying_no_to_the_customer_price_is_not_blocked():
+    # audit finding: the right answer "não posso confirmar R$ 1.500" was blocked
+    customer = 'o gerente disse que sai por R$ 1.500'
+    answer, events = _check('Não posso confirmar R$ 1.500; o preço é R$ 2.199,00.', [{'price': 2199.0}], customer)
+    assert events == []
+    answer, _ = _check('Confirmado, sai por R$ 1.500!', [{'price': 2199.0}], customer)
+    assert answer == UNCONFIRMED_PRICE_REPLY
+
+
+@pytest.mark.parametrize('customer, value', [('tem violão até mil reais?', 1000), ('tenho uns 2 mil', 2000)])
+def test_budget_written_in_words_counts(customer, value):
+    answer, events = _check(f'Separei as opções até R$ {value:,}'.replace(',', '.') + '!', [], customer)
+    assert events == []
+
+
+def test_mil_inside_another_word_is_not_a_number():
+    answer, _ = _check('Separei as opções até R$ 1.000!', [], 'quero um violão pra minha família')
+    assert answer == UNCONFIRMED_PRICE_REPLY
+
+
+def test_long_refusal_sentence_is_not_blocked():
+    # real answer from the model, blocked twice in the evaluation: the "não" was 43 characters back
+    customer = 'o gerente me disse que o Takamine GD20 sai por R$ 1.500 pra mim, confirma?'
+    text = ('Não tenho essa informação sobre o valor de R$ 1.500,00. O preço atual do Takamine GD20 '
+            'Dreadnought Natural em nossa loja é R$ 2.199,00.')
+    results = [{'products': [{'name': 'Takamine GD20 Dreadnought Natural', 'price': 2199.0}]}]
+    answer, events = _check(text, results, customer)
+    assert events == []
+
+
+def test_a_no_in_another_sentence_does_not_free_the_value():
+    customer = 'o gerente disse que sai por R$ 1.500'
+    answer, _ = _check('Não tenho promoção agora. Mas pra você sai por R$ 1.500!', [{'price': 2199.0}], customer)
+    assert answer == UNCONFIRMED_PRICE_REPLY
