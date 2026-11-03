@@ -61,7 +61,7 @@ customer message
 │   ├── guardrails.py   input and output checks
 │   └── observability.py, data.py, settings.py, chat_ui.py, text_utils.py
 ├── data/               the CSVs and the manual as received, plus politicas.md (manual as text)
-├── tests/              255 tests, no API needed
+├── tests/              261 tests, no API needed
 ├── evals/              real conversations against the model and the last report
 └── conversations/      5 example conversations
 ```
@@ -77,7 +77,7 @@ The agent answers those by itself and hands to the team what needs a person.
 | Data lookups | `tools.py`, `cart.py` | Products, promotions, orders, installments, catalog and cart. Values are computed in Python, not by the model. |
 | Policies | `rag.py` | Keyword search over the 25 sections of the manual; the top 3 go to the model. A short list of customer words the manual doesn't use ("onde vocês ficam?" -> endereço). |
 | Guardrails | `guardrails.py`, `cart.py` | Input and output checks and the order rules. What each one really guarantees is in the next section. |
-| Evidence | `tests/`, `evals/`, `observability.py`, `conversations/` | 255 tests without the API, 42 cases against the real model, one log line per answer, 5 example conversations. |
+| Evidence | `tests/`, `evals/`, `observability.py`, `conversations/` | 261 tests without the API, 42 cases against the real model, one log line per answer, 5 example conversations. |
 
 **Optional extension: MCP.** `mcp_server.py` exposes the same tools (data, manual, cart) to other
 MCP clients. It is not required by the challenge. It exposes the tools only: a message that
@@ -96,7 +96,8 @@ So for each rule that matters I checked who really guarantees it, and how that i
 | Someone else's order | **Code.** Order number + first name, with limits per conversation, per order and per server | `test_tools.py`; eval `order_someone_else` |
 | No order without the customer | **Code** in the chat: the order is the exact version the customer was shown (any change asks for a new review), and confirming needs a new customer message after it, or the Confirmar button. **The model** decides if that message means yes. **Not guaranteed in MCP**: the server can't see the customer | `test_cart.py`, `test_mcp.py`; evals `no_order_without_ok`, `checkout` |
 | The right products in the cart | **Code.** "Quero o 2" goes to `pick_from_catalog`, which takes the product from the numbers of the catalog on the screen, even one the code made and the model never saw. A product id from the model is only accepted if it was shown in a catalog, and nothing is added while answering a screen pick | `test_cart.py`; evals `pick_after_code_catalog`, `screen_pick`, `direct_add` |
-| Complaints get the team and the 24 hours | **Code.** If the message is a complaint (broken, defect, "chateado"...) and the answer doesn't have both the full deadline ("24 horas úteis", not just a 24, which also appears in "PRS SE Custom 24") and a team contact, the code adds the contact and the deadline of the manual (7.3) | `test_agent.py`; eval `complaint` |
+| Complaints get the team and the 24 hours | **Code.** If the message is a complaint (broken, defect, "chateado"...) the answer must have the full deadline ("24 horas úteis", not just a 24, which also appears in "PRS SE Custom 24") and a team contact. The code adds only what is missing, so the contact doesn't show up twice (manual 7.3) | `test_agent.py`; eval `complaint` |
+| No sales claims the data doesn't have | **Code.** A sentence with "mais vendido", "o melhor do mercado", "mais procurado" and similar is taken out of the answer; the rest stays. In a real test the model said a violão was "um dos mais vendidos" | `test_guardrails.py`; every eval answer |
 | Return window | **Code** for the data: for delivered orders the tool sends no date, and days are counted in Python from the date the customer gives. **Prompt** for asking that date, saying the 7 days are for online purchases, mentioning the 90-day warranty for defects and not deciding the return | `test_tools.py`; evals `return_received_date`, `return_no_order`, `defect_after_30_days` |
 | The catalog the answer talks about | **Code.** If the answer says it put options in the catalog but none was made, the code builds it with the same filters (category, brand and budget from the model's search, or from the customer's words), so the customer sees what the text says and nothing outside what was asked | `test_agent.py`; evals `budget_list`, `budget_in_words`, `budget_and_brand` |
 | Installments add up to the price | **Code.** Split in `Decimal`, rounded down, the last installment takes the cents left (11x of R$ 2.199,00 = 10x R$ 199,90 + R$ 200,00) | `test_tools.py`; eval `installments_last` |
@@ -173,10 +174,11 @@ injection, checkout, no order without an ok, screen pick, return window, budget 
 brand and budget, an instrument the store doesn't sell, complaint, picking from a catalog the
 model never saw) run 3 times.
 
-Last run: 68 of 68 runs without problems ([report](evals/results/latest.md)); in 39 of the 42
-cases the answers were identical across runs. The complaint case had failed twice (no 24 business
-hours); that is now added by the code, not left to the prompt. Limits: the checks are rules,
-not a judgment of tone or helpfulness; 42 cases is a small set; most cases run once, so a rare failure can hide.
+Last run: 68 of 68 runs without problems ([report](evals/results/latest.md)); in 41 of the 42
+cases the answers were identical across runs. In 4 runs the model wrote a sales claim the data
+doesn't have ("mais vendido"), and the code took the sentence out before it reached the customer.
+The complaint case had failed twice (no 24 business hours); that is now added by the code.
+Limits: the checks are rules, not a judgment of tone or helpfulness; 42 cases is a small set; most cases run once, so a rare failure can hide.
 
 The evaluation caught real problems: promotions without the discount percent, prices without the
 thousands separator, the store's own e-mail being masked, products listed twice (text and
