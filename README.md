@@ -231,14 +231,32 @@ forecast date and only the last answer being checked. Each one became a test or 
   taken from real conversations in the logs.
 - Next: WhatsApp integration (the store's main channel) using the same `cart.py`.
 
+## Technologies
+
+| What | Used | Why |
+|---|---|---|
+| Language | Python 3.11+ | Required by the challenge |
+| Model | Gemini 3.1 Flash-Lite, Gemini 3.5 Flash-Lite as fallback | Cheap, fast, good Portuguese, function calling |
+| LLM SDK | `google-genai` 2.34.0 | Turns Python functions into tools, no agent framework needed |
+| Data | `pandas` 3.1.0 | Reads and joins the six CSVs once at startup |
+| Interface | `streamlit` 1.66.1 | Chat in the browser with catalog and cart buttons |
+| MCP | `mcp` 2.3.0 | The same tools for other MCP clients (optional) |
+| Config | `python-dotenv` 1.2.4 | Reads the API key from `.env` |
+| Tests and lint | `pytest` 9.2.0, `ruff` 0.14.0 | 261 tests without the API, one code style |
+
+The five pillars of AI engineering are all in the project: **agent** (function calling in
+`agent.py`), **RAG** (keyword retrieval over the manual in `rag.py`), **guardrails** (input,
+output and order checks in `guardrails.py` and `cart.py`), **MCP** (`mcp_server.py`, optional) and
+**observability** (one log line per answer in `observability.py`).
+
 ## Use of AI coding assistants
 
-The logic of the agent is mine: what it does, how it should behave with the customer, the flows
-(catalog, cart, review, handoff to the team) and every change after testing. Claude Code
-(Anthropic), in VS Code, implemented that logic in code as my pair programmer, and ChatGPT and
-Codex reviewed it. I ran it, tested it as a customer and decided what to change until it behaved
-the way I wanted. The technical architecture (function calling + retrieval) was suggested by
-Claude Code; I chose it after going through the trade-offs. What came from my side:
+I built this agent with the help of AI coding assistants. I defined its logic and behavior,
+tested it as a customer and decided every change. **Claude Code** (Anthropic), in VS Code, was my
+pair programmer and wrote the code from my instructions. **ChatGPT** and **Codex** (OpenAI) were the auditors: they reviewed the code,
+reproduced failures and pointed out what to fix. The technical architecture (function calling +
+retrieval) was suggested by Claude Code; I chose it after going through the trade-offs. What came
+from my side:
 
 - The constraints: simple code in the style of my previous projects, English for the submission,
   the cheapest model, no emojis or long dashes in the answers.
@@ -249,8 +267,8 @@ Claude Code; I chose it after going through the trade-offs. What came from my si
 - The question that shaped the MCP part: "would this work where there are no buttons?"
 - A security review that I asked for after the features were done. It found an order lookup
   brute force, the model being able to confirm an order alone, and a price trick; all fixed, with
-  a test for each attack. I also asked ChatGPT and Codex for independent audits. They found more
-  issues, like ids passing as prices and the return window using the forecast date; each one was
-  reproduced, fixed and got a test.
+  a test for each attack. Then ChatGPT and Codex audited it on their own and found more, like ids
+  passing as prices and the return window using the forecast date; each one was reproduced,
+  fixed and got a test.
 - Before each commit, I had the assistant replay the commit order in a copy of the repository and
   run the tests at every step.
