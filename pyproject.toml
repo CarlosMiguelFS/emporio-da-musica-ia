@@ -2,7 +2,7 @@
 name = "emporio-da-musica-ia"
 version = "1.0.0"
 description = "Customer service agent for Empório da Música"
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 
 [tool.pytest.ini_options]
 pythonpath = ["."]
@@ -10,7 +10,7 @@ testpaths = ["tests"]
 
 [tool.ruff]
 line-length = 120
-target-version = "py310"
+target-version = "py311"
 extend-exclude = [".venv"]
 
 [tool.ruff.format]

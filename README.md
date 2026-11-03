@@ -7,22 +7,24 @@ the confirmed order to a store attendant, who creates the payment link.
 
 ## Running
 
-Requires Python 3.10+ and a Gemini API key (<https://aistudio.google.com/apikey>).
+Requires **Python 3.11+** (some pinned libraries don't install on 3.10) and a Gemini API key
+(<https://aistudio.google.com/apikey>).
+
+Quick start (Windows PowerShell; on Linux/macOS use `source .venv/bin/activate` and `cp`):
 
 ```bash
 python -m venv .venv
-.venv\Scripts\activate              # Windows  (Linux/macOS: source .venv/bin/activate)
+.venv\Scripts\activate
 pip install -r requirements.txt     # or requirements-dev.txt to also get pytest and ruff
+copy .env.example .env              # then open .env and paste your Gemini key
+streamlit run app.py                # then open http://localhost:8501 in the browser
 ```
 
-Create a `.env` file in the project root (it is git-ignored):
+The browser doesn't open by itself (the app runs headless, see `.streamlit/config.toml`).
+The `.env` file is git-ignored, so the key never goes to the repository. In it, `MODELS` is
+optional: if the first model is down, the next one answers.
 
-```
-GEMINI_API_KEY=your-key-here
-MODELS=gemini-3.1-flash-lite,gemini-3.5-flash-lite
-```
-
-`MODELS` is optional (that list is the default). If the first model is down, the next one answers.
+Other commands:
 
 ```bash
 streamlit run app.py                # chat in the browser, with catalog and cart buttons
