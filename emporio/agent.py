@@ -45,6 +45,8 @@ COMPLAINT_NOTE = (
     f'Para registrar e resolver, fala com a nossa equipe no WhatsApp {STORE_PHONE} ou no e-mail '
     f'{STORE_EMAIL}: eles retornam em até 24 horas úteis.'
 )
+COMPLAINT_DEADLINE = 'A equipe registra e retorna em até 24 horas úteis.'
+COMPLAINT_CONTACT = f'Para registrar, fala com a nossa equipe no WhatsApp {STORE_PHONE} ou no e-mail {STORE_EMAIL}.'
 
 # counts the whole server: a new tab is a new conversation, so the 30 messages aren't enough
 MAX_MESSAGES_PER_MINUTE = 60
@@ -249,8 +251,15 @@ def say_who_handles_complaints(answer, message):
     # manual 7.3: a complaint always gets the team contact and the 24 business hours
     if not is_complaint(message):
         return answer
-    if has_deadline(answer) and has_team_contact(answer):
+    deadline = has_deadline(answer)
+    contact = has_team_contact(answer)
+    # only what is missing, so the contact doesn't show up twice
+    if deadline and contact:
         return answer
+    if contact:
+        return f'{answer}\n\n{COMPLAINT_DEADLINE}'
+    if deadline:
+        return f'{answer}\n\n{COMPLAINT_CONTACT}'
     return f'{answer}\n\n{COMPLAINT_NOTE}'
 
 
