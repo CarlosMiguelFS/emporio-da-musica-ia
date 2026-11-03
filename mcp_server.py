@@ -90,7 +90,7 @@ def add_to_cart(session_id: str, product_id: int, quantity: int) -> dict:
     cart = get_cart(session_id)
     if cart is None:
         return BAD_SESSION
-    return with_text(cart, cart.add(product_id, quantity))
+    return with_text(cart, cart.add_from_model(product_id, quantity))
 
 
 @server.tool(annotations=changes_cart)

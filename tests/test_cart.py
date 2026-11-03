@@ -323,6 +323,7 @@ def test_tools_change_only_their_own_cart():
     for tool in cart_tools(first):
         tools[tool.__name__] = tool
 
+    tools['show_catalog']('violão', '', 'Yamaha', 0)
     tools['add_to_cart'](YAMAHA_C40, 1)
     assert first.items == {YAMAHA_C40: 1}
     assert second.items == {}
@@ -347,19 +348,38 @@ def test_model_does_not_add_again_what_the_screen_already_added():
     assert 'Nada foi adicionado' in result['note']
 
 
-def test_after_the_screen_pick_the_model_can_add_more_normally():
+def test_model_adds_nothing_while_answering_a_screen_pick():
+    # real bug: answering "Adicionei ao carrinho: Telecaster x1", the model called add_to_cart
+    # with a made-up id and a violão went into the cart
+    cart = Cart()
+    tools = {}
+    for tool in cart_tools(cart):
+        tools[tool.__name__] = tool
+    cart.catalog('violão', '', 'Yamaha', 0)
+    cart.catalog('guitarra', '', '', 0)
+
+    cart.add_from_screen(TELECASTER, 1)
+    tools['add_to_cart'](YAMAHA_C40, 1)
+    assert cart.items == {TELECASTER: 1}
+
+    cart.picked_on_screen = {}
+    tools['add_to_cart'](TELECASTER, 1)
+    assert cart.items[TELECASTER] == 2
+
+
+def test_model_cant_add_a_product_it_never_showed():
     cart = Cart()
     tools = {}
     for tool in cart_tools(cart):
         tools[tool.__name__] = tool
 
-    cart.add_from_screen(TELECASTER, 2)
-    tools['add_to_cart'](YAMAHA_C40, 1)
-    assert cart.items == {TELECASTER: 2, YAMAHA_C40: 1}
+    result = tools['add_to_cart'](101, 1)
+    assert 'error' in result
+    assert cart.items == {}
 
-    cart.picked_on_screen = {}
-    tools['add_to_cart'](TELECASTER, 1)
-    assert cart.items[TELECASTER] == 3
+    tools['show_catalog']('violão', 'Giannini GNF-3', '', 0)
+    tools['add_to_cart'](101, 1)
+    assert cart.items == {101: 1}
 
 
 def test_model_cant_show_and_confirm_in_the_same_message(temp_logs):

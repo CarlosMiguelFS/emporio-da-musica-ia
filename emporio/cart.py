@@ -145,6 +145,8 @@ class Cart:
         self.picked_on_screen = {}
         self.turn = 0
         self.shown_on_turn = None
+        # products shown in a catalog of this conversation, the only ones the model can add
+        self.seen = set()
 
     def catalog(self, categories, term='', brand='', max_price=0):
         found = []
@@ -207,6 +209,7 @@ class Cart:
                         break
                     count += 1
                     self.numbers[count] = product['id']
+                    self.seen.add(product['id'])
                     items.append({'number': count, 'product': product})
                 brands.append({'brand': name, 'items': items, 'models': len(products),
                                'from_price': sale_price(products[0])})
@@ -276,12 +279,17 @@ class Cart:
         return result
 
     def add_from_model(self, product_id, quantity):
-        product = find_product(product_id)
-        if product and product['id'] in self.picked_on_screen:
-            del self.picked_on_screen[product['id']]
+        # the customer picked on the screen in this message: everything is already in the cart.
+        # The model once "added it again" with a made-up id and a wrong product went in
+        if self.picked_on_screen:
             result = self.summary()
-            result['note'] = 'Já está no carrinho, o cliente colocou pela tela. Nada foi adicionado.'
+            result['note'] = 'O cliente já colocou os produtos pela tela. Nada foi adicionado.'
             return result
+
+        product = find_product(product_id)
+        if not product or product['id'] not in self.seen:
+            return {'error': 'Esse produto não apareceu em nenhum catálogo desta conversa. '
+                             'Chame show_catalog com o nome do produto em term e use o product_id que voltar.'}
         return self.add(product_id, quantity)
 
     def set_quantity(self, product_id, quantity):

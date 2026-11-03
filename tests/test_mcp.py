@@ -52,6 +52,7 @@ def test_bad_session_id_is_refused(session_id):
 
 
 def test_show_and_confirm_need_two_calls(monkeypatch):
+    call('show_catalog', {'session_id': 'sessao-dddd', 'categories': 'violão', 'brand': 'Yamaha'})
     call('add_to_cart', {'session_id': 'sessao-dddd', 'product_id': 81, 'quantity': 1})
     call('show_cart', {'session_id': 'sessao-dddd'})
     call('confirm_order', {'session_id': 'sessao-dddd'})
@@ -73,3 +74,9 @@ def test_confirm_order_asks_the_person_in_mcp_clients():
             assert tool.annotations.destructive_hint is True
         elif tool.name in ['search_products', 'get_order', 'search_policies']:
             assert tool.annotations.read_only_hint is True
+
+
+def test_mcp_cant_add_a_product_that_was_never_shown():
+    result = call('add_to_cart', {'session_id': 'sessao-eeee', 'product_id': 101, 'quantity': 1})
+    assert 'catálogo' in str(result)
+    assert mcp_server.carts['sessao-eeee'].items == {}
