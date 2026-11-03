@@ -9,7 +9,7 @@ from emporio.cart import Cart, cart_tools
 from emporio.observability import describe_error, log_turn, safe_args
 from emporio.prompt import build_prompt
 from emporio.settings import STORE_PHONE
-from emporio.tools import TOOLS
+from emporio.tools import TOOLS, conversation_tools
 
 DEFAULT_MODELS = 'gemini-3.1-flash-lite,gemini-3.5-flash-lite'  # cheapest first
 MAX_TOOL_CALLS = 5
@@ -37,6 +37,12 @@ EMPTY_ANSWER_NOTE = (
     'last message now, using the tool results you already have.'
 )
 EMPTY_REPLY = 'Desculpa, me enrolei aqui. Pode mandar sua pergunta de novo?'
+
+# the 30 messages limit is per conversation, and a new tab is a new conversation.
+# This one counts the whole server, so nobody runs up the API bill opening tabs
+MAX_MESSAGES_PER_MINUTE = 60
+BUSY_REPLY = f'Estou com muitas conversas agora. Tenta de novo em um minutinho ou fala com a equipe no {STORE_PHONE}.'
+recent_messages = []
 
 _client = None
 
@@ -90,7 +96,7 @@ class Conversation:
         self.model = models[0]
         self.fallbacks = []
         self.cart = Cart()
-        self.tools = TOOLS + cart_tools(self.cart)
+        self.tools = conversation_tools() + cart_tools(self.cart)
         self.chat = self.start_chat(history=None)
 
     def start_chat(self, history):
@@ -168,8 +174,8 @@ def ask(chat, text, customer_message):
         if part.function_call:
             calls.append(part.function_call)
 
-    allowed = guardrails.allowed_values(all_tool_results(history), customer_message)
-    answer, events = guardrails.check_output(response.text or '', allowed)
+    allowed = guardrails.allowed_values(all_tool_results(history))
+    answer, events = guardrails.check_output(response.text or '', allowed, customer_message)
     return response, calls, answer, events
 
 
@@ -184,12 +190,32 @@ def elapsed_ms(start):
     return round((time.perf_counter() - start) * 1000)
 
 
+def server_is_busy():
+    global recent_messages
+    now = time.monotonic()
+    kept = []
+    for moment in recent_messages:
+        if now - moment < 60:
+            kept.append(moment)
+    recent_messages = kept
+
+    if len(recent_messages) >= MAX_MESSAGES_PER_MINUTE:
+        return True
+    recent_messages.append(now)
+    return False
+
+
 def reply(chat, session_id, message):
     # one customer message: guardrails -> model + tools -> guardrails -> log.
     # Never raises: any failure becomes ERROR_REPLY plus a line in the log.
     start = time.perf_counter()
     record = {'session': session_id}
     events = []
+
+    # the cart needs to know a new customer message started (see Cart.confirm)
+    cart = getattr(chat, 'cart', None)
+    if cart:
+        cart.new_turn()
 
     try:
         message, blocked, events = guardrails.check_input(message)
@@ -199,6 +225,12 @@ def reply(chat, session_id, message):
             record['guardrails'] = events
             log_turn(record)
             return guardrails.OFF_LIMITS_REPLY, []
+
+        if server_is_busy():
+            record['answer'] = BUSY_REPLY
+            record['guardrails'] = events + ['server_busy']
+            log_turn(record)
+            return BUSY_REPLY, []
 
         response, calls, answer, output_events = ask(chat, message, message)
 

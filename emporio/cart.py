@@ -1,10 +1,12 @@
 import json
+import uuid
 from datetime import datetime
 from decimal import Decimal
 from difflib import get_close_matches
 
 from emporio import observability
 from emporio.data import PRODUCTS
+from emporio.settings import STORE_PHONE
 from emporio.text_utils import normalize
 from emporio.tools import product_summary
 
@@ -23,8 +25,11 @@ MAX_LIST = 10  # more than this, send a summary by brand
 MAX_QUANTITY = 99
 MAX_DESCRIPTION = 90
 
+MAX_VERSIONS = 5  # changes after that go to a person, so nobody floods the team
+TEAM_DIR = 'team'
 TEAM_FILE_NAME = 'orders.jsonl'
 EDITING_NOTE = 'Cliente está alterando o pedido. Não gere o link de pagamento ainda.'
+TOO_MANY_CHANGES = f'Esse pedido já foi alterado muitas vezes. Peça para o cliente falar com a equipe no {STORE_PHONE}.'
 
 
 def brl(value):
@@ -138,6 +143,8 @@ class Cart:
         self.events = []
         # picked on the screen, so the model doesn't add it again
         self.picked_on_screen = {}
+        self.turn = 0
+        self.shown_on_turn = None
 
     def catalog(self, categories, term='', brand='', max_price=0):
         found = []
@@ -332,10 +339,14 @@ class Cart:
                                'status': self.order['status']}
         return result
 
+    def new_turn(self):
+        self.turn += 1
+
     def ask_confirmation(self):
         if not self.items:
             return {'error': 'O carrinho está vazio.'}
         self.waiting_confirmation = True
+        self.shown_on_turn = self.turn
         self.events.append({'kind': 'cart'})
         result = self.summary()
         result['shown_to_customer'] = True
@@ -353,7 +364,10 @@ class Cart:
             items[line['product']['id']] = [line['product']['name'], line['quantity']]
         return items
 
-    def confirm(self):
+    def confirm(self, by_customer=False):
+        # by_customer is the Confirmar button. The model only confirms if the cart was shown in an
+        # earlier message: without this, an injected message could make it call show_cart and
+        # confirm_order together and send an order nobody saw
         if not self.items:
             return {'error': 'O carrinho está vazio.'}
 
@@ -365,11 +379,16 @@ class Cart:
 
         if not self.waiting_confirmation:
             return {'error': 'Mostre o carrinho com show_cart e espere o cliente confirmar.'}
+        if not by_customer and self.shown_on_turn == self.turn:
+            return {'error': 'O cliente ainda não viu o carrinho. Espere ele responder.'}
+        if self.order and self.order['version'] >= MAX_VERSIONS:
+            return {'error': TOO_MANY_CHANGES}
 
         self.waiting_confirmation = False
 
         if not self.order:
-            number = datetime.now().strftime('%d%H%M%S')
+            # random, so two orders in the same second don't get the same number
+            number = uuid.uuid4().hex[:6].upper()
             self.order = {'number': number, 'version': 1, 'items': self.snapshot(), 'status': 'enviado para a equipe'}
             self.tell_team('new', 'Pedido novo, pode gerar o link de pagamento.')
             return {'status': 'sent', 'order_number': number, 'version': 1, 'total': float(self.total())}
@@ -398,8 +417,10 @@ class Cart:
             'items': items,
             'total': float(self.total()),
         }
-        observability.LOG_DIR.mkdir(exist_ok=True)
-        with open(observability.LOG_DIR / TEAM_FILE_NAME, 'a', encoding='utf-8') as file:
+        # own folder, so the logs summary doesn't read the orders as conversation turns
+        team_dir = observability.LOG_DIR / TEAM_DIR
+        team_dir.mkdir(parents=True, exist_ok=True)
+        with open(team_dir / TEAM_FILE_NAME, 'a', encoding='utf-8') as file:
             file.write(json.dumps(record, ensure_ascii=False) + '\n')
 
     def take_events(self):

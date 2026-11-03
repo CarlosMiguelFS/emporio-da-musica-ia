@@ -4,7 +4,7 @@ from decimal import Decimal
 import pytest
 
 from emporio import observability
-from emporio.cart import MAX_CATALOG, Cart, cart_text, cart_tools, catalog_text, find_category
+from emporio.cart import MAX_CATALOG, MAX_VERSIONS, Cart, cart_text, cart_tools, catalog_text, find_category
 
 TELECASTER = 134
 LES_PAUL = 131  # only 2 in stock
@@ -21,7 +21,7 @@ def temp_logs(tmp_path, monkeypatch):
 
 
 def team_lines(temp_logs):
-    file = temp_logs / 'orders.jsonl'
+    file = temp_logs / 'team' / 'orders.jsonl'
     if not file.exists():
         return []
     lines = []
@@ -34,11 +34,17 @@ def all_numbers(cart):
     return sorted(cart.numbers)
 
 
+def show_and_confirm(cart):
+    # the cart is shown in one message and confirmed in the next one, like a real chat
+    cart.ask_confirmation()
+    cart.new_turn()
+    return cart.confirm()
+
+
 def confirmed_cart():
     cart = Cart('s1')
     cart.add(TELECASTER, 2)
-    cart.ask_confirmation()
-    cart.confirm()
+    show_and_confirm(cart)
     return cart
 
 
@@ -263,8 +269,7 @@ def test_new_confirmation_sends_version_2_with_what_changed(temp_logs):
     cart = confirmed_cart()
     cart.set_quantity(TELECASTER, 1)
     cart.add(YAMAHA_C40, 1)
-    cart.ask_confirmation()
-    result = cart.confirm()
+    result = show_and_confirm(cart)
 
     assert result['status'] == 'updated'
     assert result['version'] == 2
@@ -355,3 +360,43 @@ def test_after_the_screen_pick_the_model_can_add_more_normally():
     cart.picked_on_screen = {}
     tools['add_to_cart'](TELECASTER, 1)
     assert cart.items[TELECASTER] == 3
+
+
+def test_model_cant_show_and_confirm_in_the_same_message(temp_logs):
+    # real attack: an injected message made the model call show_cart and confirm_order together
+    cart = Cart()
+    cart.add(TELECASTER, 15)
+    cart.ask_confirmation()
+
+    assert 'error' in cart.confirm()
+    assert cart.order is None
+    assert team_lines(temp_logs) == []
+
+    cart.new_turn()
+    assert cart.confirm()['status'] == 'sent'
+
+
+def test_confirm_button_works_right_after_the_cart_shows_up():
+    cart = Cart()
+    cart.add(TELECASTER, 1)
+    cart.ask_confirmation()
+    assert cart.confirm(by_customer=True)['status'] == 'sent'
+
+
+def test_order_cant_be_changed_forever(temp_logs):
+    cart = confirmed_cart()
+    for _ in range(MAX_VERSIONS - 1):
+        cart.add(YAMAHA_C40, 1)
+        assert show_and_confirm(cart)['status'] == 'updated'
+
+    cart.add(YAMAHA_C40, 1)
+    result = show_and_confirm(cart)
+    assert 'error' in result
+    assert cart.order['version'] == MAX_VERSIONS
+
+
+def test_two_orders_get_different_numbers():
+    numbers = set()
+    for _ in range(20):
+        numbers.add(confirmed_cart().order['number'])
+    assert len(numbers) == 20
