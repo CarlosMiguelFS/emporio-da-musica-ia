@@ -15,6 +15,17 @@ CATEGORIES = [
     'Instrumentos de Sopro (Madeiras)', 'Instrumentos de Sopro (Metais)', 'Cordas Orquestrais', 'Ukuleles',
 ]
 
+# the words customers use for each category, to find what they asked for in their own message
+CATEGORY_WORDS = {
+    'guitarra': 'Guitarras', 'guitarras': 'Guitarras',
+    'baixo': 'Baixos', 'baixos': 'Baixos', 'contrabaixo': 'Baixos',
+    'bateria': 'Baterias e Percussão', 'baterias': 'Baterias e Percussão', 'percussao': 'Baterias e Percussão',
+    'surdo': 'Baterias e Percussão', 'pandeiro': 'Baterias e Percussão',
+    'teclado': 'Teclados e Pianos', 'teclados': 'Teclados e Pianos', 'piano': 'Teclados e Pianos',
+    'violao': 'Violões', 'violoes': 'Violões',
+    'ukulele': 'Ukuleles', 'ukuleles': 'Ukuleles', 'cavaquinho': 'Ukuleles',
+}
+
 # Kalani before Kala, otherwise every Kalani becomes Kala
 BRANDS = ['Music Man', 'Fender', 'Gibson', 'Ibanez', 'PRS', 'Yamaha', 'Pearl', 'Korg', 'Nord', 'Roland',
           'Kalani', 'Kala', 'Ohana', 'Shelby', 'Tagima', 'Giannini', 'Rozini', 'Crafter', 'Martin',
@@ -558,3 +569,12 @@ def cart_tools(cart):
         return cart.confirm()
 
     return [show_catalog, add_to_cart, change_quantity, show_cart, confirm_order]
+
+
+def categories_in(message):
+    found = []
+    for word in normalize(message).replace(',', ' ').replace('?', ' ').split():
+        category = CATEGORY_WORDS.get(word)
+        if category and category not in found:
+            found.append(category)
+    return found

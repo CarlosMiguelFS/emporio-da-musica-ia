@@ -365,3 +365,56 @@ def test_answer_still_arrives_when_the_log_cant_be_written(monkeypatch, tmp_path
 
     answer, _ = agent.reply(ScriptedChat(['Oi! Como posso ajudar?']), 's1', 'oi')
     assert answer == 'Oi! Como posso ajudar?'
+
+
+class FakeCall:
+    def __init__(self, name, args):
+        self.name = name
+        self.args = args
+
+
+def test_catalog_the_answer_talks_about_is_really_shown():
+    # audit finding: "separei no catálogo" but the model only called search_products: no catalog
+    from emporio.cart import Cart
+
+    chat = ScriptedChat([])
+    chat.cart = Cart()
+    calls = [FakeCall('search_products', {'term': '', 'category': 'Violões', 'max_price': 1000})]
+
+    assert agent.show_promised_catalog(chat, calls, 'Separei os violões até R$ 1.000 no catálogo!')
+    catalog = chat.cart.take_events()[0]['catalog']
+    assert catalog['total'] == 12
+
+
+def test_no_extra_catalog_when_the_model_made_one_or_didnt_promise_it():
+    from emporio.cart import Cart
+
+    chat = ScriptedChat([])
+    chat.cart = Cart()
+    search = FakeCall('search_products', {'category': 'Violões', 'max_price': 1000})
+    assert not agent.show_promised_catalog(chat, [search, FakeCall('show_catalog', {})], 'Veja no catálogo!')
+    assert not agent.show_promised_catalog(chat, [search], 'O Yamaha C40 custa R$ 599,90.')
+    assert chat.cart.take_events() == []
+
+
+def test_catalog_promised_without_any_search_uses_what_the_customer_asked():
+    # audit finding: "vou abrir nosso catálogo" with no tool at all, and nothing on the screen
+    from emporio.cart import Cart
+
+    chat = ScriptedChat([])
+    chat.cart = Cart()
+    message = 'boa noite, vocês têm guitarra e ukulele?'
+
+    assert agent.show_promised_catalog(chat, [], 'Temos sim, guitarras e ukuleles no catálogo!', message)
+    sections = chat.cart.take_events()[0]['catalog']['sections']
+    names = []
+    for section in sections:
+        names.append(section['category'])
+    assert names == ['Guitarras', 'Ukuleles']
+
+
+def test_family_or_other_words_are_not_instruments():
+    from emporio.cart import categories_in
+
+    assert categories_in('quero um violão pro meu filho, é pra família') == ['Violões']
+    assert categories_in('qual o horário de vocês?') == []

@@ -5,10 +5,11 @@ from google import genai
 from google.genai import types
 
 from emporio import guardrails
-from emporio.cart import Cart, cart_tools
+from emporio.cart import Cart, cart_tools, categories_in
 from emporio.observability import describe_error, log_turn, safe_args
 from emporio.prompt import build_prompt
 from emporio.settings import STORE_PHONE
+from emporio.text_utils import normalize
 from emporio.tools import TOOLS, conversation_tools
 
 DEFAULT_MODELS = 'gemini-3.1-flash-lite,gemini-3.5-flash-lite'  # cheapest first
@@ -181,6 +182,34 @@ def ask(chat, text, customer_message):
     return response, calls, answer, events
 
 
+def show_promised_catalog(chat, calls, answer, message=''):
+    # In tests the answer said "separei no catálogo" or "vou abrir o catálogo" but no catalog was
+    # made, so the customer saw nothing. If the answer talks about the catalog and none was made,
+    # the code makes it: from the same search, or from the instruments the customer named.
+    cart = getattr(chat, 'cart', None)
+    if not cart or 'catalogo' not in normalize(answer):
+        return False
+
+    for call in calls:
+        if call.name == 'show_catalog':
+            return False
+
+    for call in calls:
+        if call.name != 'search_products':
+            continue
+        args = call.args or {}
+        category = args.get('category') or args.get('term') or ''
+        result = cart.catalog(category, '', '', args.get('max_price') or 0)
+        if result.get('total'):
+            return True
+
+    categories = categories_in(message)
+    if categories:
+        result = cart.catalog(', '.join(categories), '', '', 0)
+        return bool(result.get('total'))
+    return False
+
+
 def price_was_blocked(events):
     for event in events:
         if event.startswith('unconfirmed_price_blocked'):
@@ -248,6 +277,9 @@ def reply(chat, session_id, message):
             output_events = output_events + ['empty_answer_retry'] + retry_events
             if not answer.strip():
                 answer = EMPTY_REPLY
+
+        if show_promised_catalog(chat, calls, answer, message):
+            output_events.append('catalog_added_by_code')
 
     except Exception as error:
         record['model'] = chat.model
