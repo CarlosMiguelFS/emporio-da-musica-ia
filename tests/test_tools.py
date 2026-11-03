@@ -1,3 +1,5 @@
+from datetime import date, timedelta
+
 import pytest
 
 from emporio import tools
@@ -5,6 +7,7 @@ from emporio.tools import (
     ORDER_LOCKED,
     ORDER_NOT_FOUND,
     active_promotions,
+    days_since_received,
     get_order,
     installment_options,
     search_products,
@@ -66,7 +69,9 @@ def test_order_with_right_name():
     order = get_order(1, 'Pedro')
     assert order['status'] == 'entregue'
     assert order['tracking_code'] == 'BRAB1234567BR'
-    assert 'days_since_delivery' in order
+    # delivered: the forecast is left out, the real day is asked to the customer
+    assert 'estimated_delivery' not in order
+    assert 'days_since_delivery' not in order
 
 
 def test_order_never_shows_contact_data():
@@ -144,7 +149,8 @@ def test_conversation_tools_have_their_own_get_order():
         if tool.__name__ == 'get_order':
             assert tool is not get_order
             assert tool.__doc__ == get_order.__doc__
-    assert names == ['search_products', 'active_promotions', 'get_order', 'installment_options', 'search_policies']
+    assert names == ['search_products', 'active_promotions', 'get_order', 'installment_options', 'search_policies',
+                     'days_since_received']
 
 
 def test_cancelled_order_has_reason():
@@ -165,3 +171,29 @@ def test_customer_contact_data_is_never_loaded():
     from emporio.data import CUSTOMERS
 
     assert list(CUSTOMERS.columns) == ['customer_id', 'name']
+
+
+def test_days_since_received_counts_from_the_date_the_customer_gives():
+    today = date.today()
+    result = days_since_received((today - timedelta(days=3)).isoformat())
+    assert result['days_since_received'] == 3
+    assert result['within_7_days'] is True
+
+    result = days_since_received((today - timedelta(days=8)).isoformat())
+    assert result['within_7_days'] is False
+
+
+@pytest.mark.parametrize('value', ['ontem', '18/02/2026', '', None])
+def test_days_since_received_refuses_a_date_it_cant_read(value):
+    assert 'error' in days_since_received(value)
+
+
+def test_days_since_received_refuses_a_future_date():
+    assert 'error' in days_since_received((date.today() + timedelta(days=2)).isoformat())
+
+
+def test_order_on_the_way_shows_the_forecast_as_a_forecast():
+    order = get_order(8, 'Ana')
+    assert order['status'] == 'enviado'
+    assert order['estimated_delivery'] == '2026-02-28'
+    assert 'previsão' in order['estimated_delivery_note']

@@ -43,6 +43,10 @@ PAYMENT = {'pix': 'PIX', 'debit': 'cartão de débito', 'boleto': 'boleto'}
 # same message for "doesn't exist" and "wrong name", so nobody can find out which order numbers exist
 ORDER_NOT_FOUND = 'Não encontrei um pedido com esse número e esse nome.'
 ORDER_LOCKED = f'Muitas tentativas sem sucesso. Por segurança, fale com a equipe no {STORE_PHONE}.'
+RECEIVED_DATE_NOTE = (
+    'O dia em que o cliente recebeu não está nos dados. Não diga quando foi entregue. '
+    'Para devolução por arrependimento, pergunte e use days_since_received.'
+)
 
 order_fails = {}
 server_fails = []
@@ -263,11 +267,14 @@ def find_order(order_id, customer_name, attempts):
     if pd.notna(order['tracking_code']):
         answer['tracking_code'] = order['tracking_code']
 
-    if pd.notna(order['estimated_delivery']):
+    # the forecast only helps while the order is on the way. Once delivered, the model kept using it
+    # as the day the customer got it ("entregue em fevereiro, o prazo já passou"), so it is left out
+    # and the real day is asked to the customer (days_since_received)
+    if pd.notna(order['estimated_delivery']) and order['status'] != 'delivered':
         answer['estimated_delivery'] = order['estimated_delivery']
-        if order['status'] == 'delivered':
-            # no real delivery date in the data, using the estimate
-            answer['days_since_delivery'] = days_since(order['estimated_delivery'])
+        answer['estimated_delivery_note'] = 'previsão de entrega, não é a data em que o cliente recebeu'
+    if order['status'] == 'delivered':
+        answer['received_date_note'] = RECEIVED_DATE_NOTE
 
     if pd.notna(order['notes']):
         answer['notes'] = order['notes']
@@ -307,7 +314,25 @@ def installment_options(amount: float) -> dict:
     }
 
 
-TOOLS = [search_products, active_promotions, get_order, installment_options, search_policies]
+def days_since_received(received_date: str) -> dict:
+    """Counts the days since the customer received the product, for the 7-day return window
+    (manual 4.1). Ask the customer the day they received it; never use the estimated delivery.
+
+    Args:
+        received_date: the day the customer says they received it, as YYYY-MM-DD.
+    """
+    try:
+        received = date.fromisoformat(clean_text(received_date)[:10])
+    except ValueError:
+        return {'error': 'Data inválida, use o formato AAAA-MM-DD.'}
+
+    days = (date.today() - received).days
+    if days < 0:
+        return {'error': 'Essa data ainda não chegou.'}
+    return {'received_date': received.isoformat(), 'days_since_received': days, 'within_7_days': days <= 7}
+
+
+TOOLS = [search_products, active_promotions, get_order, installment_options, search_policies, days_since_received]
 
 
 def conversation_tools():

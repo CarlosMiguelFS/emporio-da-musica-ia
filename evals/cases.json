@@ -33,5 +33,6 @@
   {"id": "not_in_catalog", "messages": ["Ola boa noite gostaria de comprar Uma guitarra uma bateria e um surdo"], "expect_tools": ["show_catalog"], "must_contain": ["surdo"], "must_not_contain": ["surdos"], "max_options": 3},
   {"id": "cart_and_question", "messages": ["quero ver as guitarras", "quero o 1", "vamos seguir, qual e horari de funcionament ode voces e de onde voces sao?"], "expect_tools": ["search_policies"], "must_contain": ["14 de maio", "18"], "forbid_order": true},
   {"id": "pick_and_browse", "messages": ["quero ver os ukuleles até 500", "quero o 1 e queria ver as baterias"], "check_all_messages": true, "expect_tools": ["add_to_cart", "show_catalog"], "max_lines": 6},
-  {"id": "direct_add", "messages": ["quero comprar o Takamine GD20, pode colocar no carrinho"], "expect_tools": ["add_to_cart"], "expect_cart": {"95": 1}, "forbid_order": true}
+  {"id": "direct_add", "messages": ["quero comprar o Takamine GD20, pode colocar no carrinho"], "expect_tools": ["add_to_cart"], "expect_cart": {"95": 1}, "forbid_order": true},
+  {"id": "return_received_date", "messages": ["me arrependi da compra e quero devolver. pedido 7, no nome da Letícia", "recebi no dia 20 de fevereiro"], "check_all_messages": true, "expect_tools": ["get_order", "days_since_received"], "must_contain": ["equipe"], "must_not_contain": ["259"]}
 ]

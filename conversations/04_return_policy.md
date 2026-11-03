@@ -1,21 +1,31 @@
 # Return policy applied to a real order
 
-Generated with the real agent (`main.py`) on 02/11/2026 23:33.
+Generated with the real agent (`main.py`) on 03/11/2026 00:20.
 
 Lines starting with `> tool:` show which tools the agent called (they are not shown to the customer).
 
 **Customer:** Me arrependi da minha compra, posso devolver meu pedido?
 
-> tool: `search_policies(question='devolução e troca de pedido arrependimento')`
+> tool: `search_policies(question='devolução por arrependimento')`
 
-**Agent:** Sinto muito que o produto não tenha sido o que esperava. Você pode solicitar a devolução por arrependimento em até 7 dias corridos após o recebimento, desde que o item esteja na embalagem original e sem sinais de uso.  
+**Agent:** Sinto muito que o produto não tenha atendido ao que você esperava. De acordo com nossa política, você pode solicitar a devolução por arrependimento em até 7 dias corridos após o recebimento, desde que o item esteja na embalagem original e sem sinais de uso.  
   
-Para seguirmos com o processo, você poderia me informar o número do seu pedido e o nome de quem realizou a compra?
+Para eu verificar se ainda estamos dentro desse prazo, você poderia me informar em qual data você recebeu o seu pedido?
 
 **Customer:** o pedido é o 7, no nome da Letícia
 
 > tool: `get_order(order_id=7, customer_name='***')`
 
-**Agent:** Letícia, verifiquei aqui que o seu pedido foi entregue em fevereiro deste ano. Como o prazo para devolução por arrependimento é de 7 dias corridos após o recebimento, infelizmente não conseguimos seguir com a devolução por esse motivo agora.  
+**Agent:** Entendi, Letícia. Como o seu pedido foi entregue, preciso confirmar a data exata em que você recebeu o instrumento para verificar se ainda estamos dentro do prazo de 7 dias para a devolução por arrependimento.  
   
-Se você estiver enfrentando algum problema técnico com o seu ukulele, nossa equipe pode te ajudar a verificar a garantia com o fabricante. Você gostaria que eu passasse o contato deles para você conversar sobre isso?
+Você se lembra em qual dia o produto chegou aí para você?
+
+**Customer:** recebi no dia 20 de fevereiro
+
+> tool: `days_since_received(received_date='2026-02-20')`
+
+**Agent:** Sinto muito, Letícia, mas como o recebimento ocorreu no dia 20 de fevereiro, o prazo de 7 dias corridos para a devolução por arrependimento já foi encerrado.  
+  
+Nesse caso, como não se trata de uma troca por defeito dentro do prazo de 30 dias da compra, recomendo que você entre em contato diretamente com nossa equipe pelo WhatsApp (67) 3341-4444 ou pelo e-mail contato@emporiodamusica.com.br para que eles possam analisar a sua situação.  
+  
+Eles estão à disposição para conversar e ver o que pode ser feito, tudo bem?
