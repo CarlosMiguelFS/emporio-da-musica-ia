@@ -1,4 +1,5 @@
 from datetime import date, timedelta
+from decimal import Decimal
 
 import pytest
 
@@ -197,3 +198,21 @@ def test_order_on_the_way_shows_the_forecast_as_a_forecast():
     assert order['status'] == 'enviado'
     assert order['estimated_delivery'] == '2026-02-28'
     assert 'previsão' in order['estimated_delivery_note']
+
+
+@pytest.mark.parametrize('amount', [2199.0, 599.9, 1967.18, 5519.08, 100.0])
+def test_installments_always_add_up_to_the_price(amount):
+    # audit finding: 11x of R$ 199,91 added up to R$ 2.199,01 for a R$ 2.199,00 guitar
+    for option in installment_options(amount)['interest_free_options']:
+        value = Decimal(str(option['value']))
+        last = Decimal(str(option.get('last_value', option['value'])))
+        total = value * (option['installments'] - 1) + last
+        assert total == Decimal(str(amount)).quantize(Decimal('0.01'))
+
+
+def test_different_last_installment_is_marked():
+    eleven = None
+    for option in installment_options(2199.0)['interest_free_options']:
+        if option['installments'] == 11:
+            eleven = option
+    assert eleven == {'installments': 11, 'value': 199.9, 'last_value': 200.0}

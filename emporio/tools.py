@@ -1,6 +1,7 @@
 import json
 import time
 from datetime import date
+from decimal import ROUND_DOWN, Decimal
 
 import pandas as pd
 
@@ -13,6 +14,7 @@ from emporio.text_utils import normalize
 # docstrings and type hints: the Gemini SDK reads them to explain each tool to the model.
 
 PIX_DISCOUNT = 0.05
+CENT = Decimal('0.01')
 MAX_RESULTS = 10
 MAX_TEXT_ARG = 100
 MAX_AMOUNT = 1_000_000
@@ -301,11 +303,19 @@ def installment_options(amount: float) -> dict:
     if amount <= 0:
         return {'error': 'Valor inválido.'}
 
-    options = [{'installments': 1, 'value': round(amount, 2)}]
+    # in Decimal and rounded down: the last installment takes the cents left, so the installments
+    # always add up to the price (11x of R$ 199,91 used to give R$ 2.199,01 for R$ 2.199,00)
+    total = Decimal(str(amount)).quantize(CENT)
+    options = [{'installments': 1, 'value': float(total)}]
     for installments in range(2, 13):
-        value = amount / installments
-        if value >= min_installment(installments):
-            options.append({'installments': installments, 'value': round(value, 2)})
+        value = (total / installments).quantize(CENT, rounding=ROUND_DOWN)
+        if value < min_installment(installments):
+            continue
+        option = {'installments': installments, 'value': float(value)}
+        last = total - value * (installments - 1)
+        if last != value:
+            option['last_value'] = float(last)
+        options.append(option)
 
     return {
         'amount': amount,
