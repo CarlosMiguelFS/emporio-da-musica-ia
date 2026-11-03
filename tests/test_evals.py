@@ -25,7 +25,7 @@ def _fake_agent(monkeypatch, answers):
 
 
 def test_error_in_the_first_answer_fails_even_if_the_last_one_is_fine(monkeypatch):
-    # audit finding: only the last answer was checked, a broken first answer went unnoticed
+    # only the last answer was checked, a broken first answer went unnoticed
     _fake_agent(monkeypatch, [agent.ERROR_REPLY, 'Que bom que deu certo!'])
     case = {'id': 'two_messages', 'messages': ['oi', 'valeu']}
 

@@ -28,8 +28,7 @@ def test_nothing_found():
     assert result['sections'] == []
 
 
-# natural questions, synonyms and close subjects. They are the evidence that keyword search is
-# enough for this manual; if a question here needs meaning and not words, embeddings come next
+# natural questions: the evidence that keyword search is enough here
 @pytest.mark.parametrize('question, section', [
     ('Onde vocês ficam?', '1.2 Dados da Empresa'),
     ('onde fica a loja', '1.2 Dados da Empresa'),

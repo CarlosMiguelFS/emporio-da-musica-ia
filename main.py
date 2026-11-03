@@ -16,15 +16,13 @@ from emporio.text_utils import escape_markdown_dollars  # noqa: E402
 
 
 def silence_internal_output():
-    # nothing technical on the customer's screen: library logs and warnings (URLs, model names,
-    # error messages) would show what is behind the agent. Errors are in logs/ for the team.
+    # nothing technical on the customer's screen, errors go to logs/
     logging.getLogger().addHandler(logging.NullHandler())
     logging.captureWarnings(True)
 
 
 def save(history):
-    # a real customer's chat is personal data: it goes masked to logs/ (out of git, deleted after
-    # 30 days), never to conversations/, which holds the example conversations of the project
+    # a real chat is personal data: masked, in logs/ (out of git, deleted after 30 days)
     folder = observability.LOG_DIR / 'conversations'
     folder.mkdir(parents=True, exist_ok=True)
     now = datetime.now()

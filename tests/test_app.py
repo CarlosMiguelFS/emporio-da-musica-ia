@@ -42,8 +42,7 @@ def temp_logs(tmp_path, monkeypatch):
 
 @pytest.fixture(autouse=True)
 def no_typing_wait(monkeypatch):
-    # the UI waits a bit to look like someone typing; tests don't need to wait.
-    # Only this wait is turned off: Streamlit's test runner needs the real time.sleep
+    # no typing wait in tests (Streamlit's test runner needs the real sleep)
     monkeypatch.setattr(chat_ui, 'wait', lambda seconds: None)
 
 

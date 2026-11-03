@@ -11,7 +11,7 @@ STORE_WHATSAPP = '(67) 3321-4500'
 STORE_EMAIL = 'contato@emporiodamusica.com.br'
 
 MAX_TURNS = 30  # per session, so a bug or an abuse doesn't turn into a big bill
-# must match what the code really does: names typed in the chat are kept, so no "no personal data" promise
+# names typed in the chat stay in the log, so no "no personal data" promise
 PRIVACY_NOTICE = (
     'Esta conversa é registrada para melhorar o atendimento. Não guardamos CPF, cartão, e-mail '
     'nem telefone, e os registros são apagados em 30 dias.'

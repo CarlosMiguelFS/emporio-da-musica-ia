@@ -8,5 +8,5 @@ def normalize(text):
 
 
 def escape_markdown_dollars(text):
-    # Streamlit and GitHub read "$...$" as a math formula: "R$ 429,90 (R$ 408,40)" lost its "$" signs
+    # Streamlit and GitHub read "$...$" as a math formula
     return str(text).replace('$', r'\$')

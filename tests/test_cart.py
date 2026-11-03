@@ -335,7 +335,7 @@ def test_tools_have_docstrings_for_the_model():
 
 
 def test_model_does_not_add_again_what_the_screen_already_added():
-    # real bug: the screen added 2, the model was told and called add_to_cart(2) again: 4 in the cart
+    # the screen added 2 and the model added 2 more
     cart = Cart()
     tools = {}
     for tool in cart_tools(cart):
@@ -349,8 +349,7 @@ def test_model_does_not_add_again_what_the_screen_already_added():
 
 
 def test_model_adds_nothing_while_answering_a_screen_pick():
-    # real bug: answering "Adicionei ao carrinho: Telecaster x1", the model called add_to_cart
-    # with a made-up id and a violão went into the cart
+    # the model added a made-up id while answering a screen pick
     cart = Cart()
     tools = {}
     for tool in cart_tools(cart):
@@ -383,7 +382,7 @@ def test_model_cant_add_a_product_it_never_showed():
 
 
 def test_model_cant_show_and_confirm_in_the_same_message(temp_logs):
-    # real attack: an injected message made the model call show_cart and confirm_order together
+    # an injected message made the model call show_cart and confirm_order together
     cart = Cart()
     cart.add(TELECASTER, 15)
     cart.ask_confirmation()
@@ -423,7 +422,7 @@ def test_two_orders_get_different_numbers():
 
 
 def test_order_is_not_marked_sent_when_the_team_file_fails(temp_logs, monkeypatch):
-    # audit finding: the order was marked as sent before the file was written
+    # the order was marked as sent before the file was written
     cart = Cart()
     cart.add(TELECASTER, 1)
     cart.ask_confirmation()
@@ -443,7 +442,7 @@ def test_order_is_not_marked_sent_when_the_team_file_fails(temp_logs, monkeypatc
 
 
 def test_changing_the_cart_after_showing_it_needs_a_new_review(temp_logs):
-    # audit finding: the model changed the quantity after the customer saw the cart and confirmed 5
+    # the model changed the quantity after the customer saw the cart and confirmed 5
     cart = Cart()
     cart.catalog('guitarra', '', '', 0)
     cart.add(TELECASTER, 1)

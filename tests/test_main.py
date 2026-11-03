@@ -32,7 +32,7 @@ def test_terminal_shows_catalog_and_cart_after_the_answer():
 
 
 def test_saved_conversation_is_masked_and_out_of_the_examples_folder(tmp_path, monkeypatch):
-    # audit finding: --save wrote the CPF and e-mail the customer typed into conversations/
+    # --save wrote the CPF and e-mail the customer typed into conversations/
     monkeypatch.setattr(observability, 'LOG_DIR', tmp_path)
     history = [('meu cpf é 123.456.789-00 e meu email ana@teste.com', [], 'Não precisa de CPF, tá?')]
 

@@ -1,14 +1,11 @@
 import time
 
-# a reply in less than a second feels like a robot; a person takes a moment to type.
-# The wait grows with the size of the answer, with a cap so nobody gets bored.
+# an instant reply feels like a robot, so the answer waits a little (with a cap)
 MIN_TYPING_SECONDS = 1.2
 SECONDS_PER_CHARACTER = 0.004
 MAX_TYPING_SECONDS = 3.5
 
-# WhatsApp-like "typing" dots, only CSS (no JavaScript). This is the ONLY text that goes through
-# unsafe_allow_html, and it is fixed, written here. Text from the model or the customer never goes
-# through HTML, otherwise a manipulated answer could inject code into the page.
+# the only HTML on the page: fixed CSS written here, never text from the model or the customer
 TYPING_DOTS = """
 <style>
 .typing { display: inline-flex; gap: 5px; padding: 10px 4px; }

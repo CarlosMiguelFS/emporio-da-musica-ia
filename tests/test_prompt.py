@@ -20,7 +20,7 @@ def at(day, hour, minute=0):
     (at(8, 10), 'a loja está fechada agora e abre amanhã (segunda-feira) às 09:00'),
 ])
 def test_store_status_is_computed_in_python(now, expected):
-    # audit finding: on a Tuesday before 9h the model said the team would be back on Wednesday
+    # on a Tuesday before 9h the model said the team would be back on Wednesday
     assert store_status(now) == expected
 
 

@@ -10,8 +10,7 @@ from emporio.rag import search_policies
 from emporio.settings import STORE_PHONE
 from emporio.text_utils import normalize
 
-# The functions the model can call are the ones in TOOLS (end of the file). Only they have
-# docstrings and type hints: the Gemini SDK reads them to explain each tool to the model.
+# only the functions in TOOLS have docstrings: the Gemini SDK reads them for the model
 
 PIX_DISCOUNT = 0.05
 CENT = Decimal('0.01')
@@ -19,8 +18,7 @@ MAX_RESULTS = 10
 MAX_TEXT_ARG = 100
 MAX_AMOUNT = 1_000_000
 
-# order lookup limits. A right answer doesn't reset them: before, someone could fail twice,
-# look up their own order and start again, forever
+# order lookup limits; a right answer doesn't reset them
 MAX_ORDER_ATTEMPTS = 3  # wrong tries in one conversation
 MAX_TRIES_PER_ORDER = 3  # wrong tries on the same order number, from any conversation
 MAX_FAILS_ON_SERVER = 20  # wrong tries in the whole server
@@ -42,7 +40,7 @@ PRODUCT_STATUS = {
 
 PAYMENT = {'pix': 'PIX', 'debit': 'cartão de débito', 'boleto': 'boleto'}
 
-# same message for "doesn't exist" and "wrong name", so nobody can find out which order numbers exist
+# same message for "doesn't exist" and "wrong name", so order numbers can't be guessed
 ORDER_NOT_FOUND = 'Não encontrei um pedido com esse número e esse nome.'
 ORDER_LOCKED = f'Muitas tentativas sem sucesso. Por segurança, fale com a equipe no {STORE_PHONE}.'
 RECEIVED_DATE_NOTE = (
@@ -86,7 +84,7 @@ def register_fail(order_id, attempts, order_exists):
     global server_fails
     attempts['failed'] += 1
     server_fails = recent(server_fails) + [now()]
-    # only real orders are kept, otherwise trying random numbers would fill the memory
+    # only real orders are kept, random numbers would fill the memory
     if order_exists:
         order_fails[order_id] = recent(order_fails.get(order_id, [])) + [now()]
 
@@ -218,7 +216,7 @@ get_order.__doc__ = GET_ORDER_DOC
 
 
 def order_tool(attempts):
-    # each conversation counts its own wrong tries, one customer can't lock the others
+    # each conversation counts its own wrong tries
     def get_order(order_id: int, customer_name: str) -> dict:
         return find_order(order_id, customer_name, attempts)
 
@@ -269,9 +267,7 @@ def find_order(order_id, customer_name, attempts):
     if pd.notna(order['tracking_code']):
         answer['tracking_code'] = order['tracking_code']
 
-    # the forecast only helps while the order is on the way. Once delivered, the model kept using it
-    # as the day the customer got it ("entregue em fevereiro, o prazo já passou"), so it is left out
-    # and the real day is asked to the customer (days_since_received)
+    # after delivery the forecast was taken as the real date, so it is left out
     if pd.notna(order['estimated_delivery']) and order['status'] != 'delivered':
         answer['estimated_delivery'] = order['estimated_delivery']
         answer['estimated_delivery_note'] = 'previsão de entrega, não é a data em que o cliente recebeu'
@@ -303,8 +299,7 @@ def installment_options(amount: float) -> dict:
     if amount <= 0:
         return {'error': 'Valor inválido.'}
 
-    # in Decimal and rounded down: the last installment takes the cents left, so the installments
-    # always add up to the price (11x of R$ 199,91 used to give R$ 2.199,01 for R$ 2.199,00)
+    # rounded down, the last installment takes the cents left
     total = Decimal(str(amount)).quantize(CENT)
     options = [{'installments': 1, 'value': float(total)}]
     for installments in range(2, 13):
@@ -346,7 +341,7 @@ TOOLS = [search_products, active_promotions, get_order, installment_options, sea
 
 
 def conversation_tools():
-    # same tools, but get_order counts the wrong tries of this conversation only
+    # same tools, with a get_order that counts this conversation only
     attempts = new_attempts()
     tools = []
     for tool in TOOLS:

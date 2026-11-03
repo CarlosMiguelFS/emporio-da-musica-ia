@@ -17,7 +17,7 @@ def new_session_id():
 
 
 def purge_old_logs():
-    # also the subfolders: orders for the team and conversations saved with --save
+    # also the subfolders: team orders and chats saved with --save
     limit = datetime.now() - timedelta(days=RETENTION_DAYS)
     for file in LOG_DIR.rglob('*'):
         if file.suffix not in ['.jsonl', '.md']:
@@ -41,7 +41,7 @@ def safe_args(args):
 
 
 def describe_error(error):
-    # just the type wasn't enough to find out why it failed (e.g. 404 model retired, 402 no credits)
+    # the type alone doesn't say why it failed (404 retired model, 402 no credits)
     message = API_KEY_PATTERN.sub('[api-key]', str(error))
     code = None
     if hasattr(error, 'code'):
@@ -55,7 +55,7 @@ def describe_error(error):
 
 
 def log_turn(record):
-    # a log that can't be written (full disk, no permission) must not break the customer's answer
+    # a log that can't be written must not break the answer
     now = datetime.now()
     line = {'time': now.isoformat(timespec='seconds')}
     line.update(record)

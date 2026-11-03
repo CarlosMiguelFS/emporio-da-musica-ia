@@ -5,9 +5,7 @@ from emporio.text_utils import normalize
 
 TOP_K = 3
 
-# customers' words the manual doesn't use. Found by testing natural questions: "onde vocês
-# ficam?" found nothing, because the manual only says "endereço" (tests/test_rag.py)
-# Whole words only: with stems, "chegou" (arrived) was taken as "chego" (how do I get there)
+# customer words the manual doesn't use (whole words: "chegou" is not "chego")
 SYNONYMS = {
     'fica': 'endereco',
     'ficam': 'endereco',

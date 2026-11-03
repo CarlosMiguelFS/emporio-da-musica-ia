@@ -94,7 +94,7 @@ def test_order_locks_after_failed_attempts():
 
 
 def test_right_answer_does_not_reset_the_count():
-    # real attack: fail twice, look up your own order to reset, try again, forever
+    # fail twice, look up your own order to reset, try again, forever
     lookup = tools.order_tool(tools.new_attempts())
     lookup(4, 'Ana')
     lookup(8, 'Lucas')
@@ -202,7 +202,7 @@ def test_order_on_the_way_shows_the_forecast_as_a_forecast():
 
 @pytest.mark.parametrize('amount', [2199.0, 599.9, 1967.18, 5519.08, 100.0])
 def test_installments_always_add_up_to_the_price(amount):
-    # audit finding: 11x of R$ 199,91 added up to R$ 2.199,01 for a R$ 2.199,00 guitar
+    # 11x of R$ 199,91 added up to R$ 2.199,01 for a R$ 2.199,00 guitar
     for option in installment_options(amount)['interest_free_options']:
         value = Decimal(str(option['value']))
         last = Decimal(str(option.get('last_value', option['value'])))

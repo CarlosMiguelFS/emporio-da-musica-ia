@@ -168,8 +168,7 @@ st.title('Empório da Música', anchor=False)
 st.caption('Atendimento virtual · Campo Grande/MS')
 st.caption(PRIVACY_NOTICE)
 
-# Streamlit runs this whole file again on every message. session_state is what survives
-# between runs, and it is separate for each browser tab, so each customer has their own chat.
+# Streamlit runs the whole file on every message; session_state is kept per browser tab
 if 'chat' not in st.session_state:
     try:
         purge_old_logs()
