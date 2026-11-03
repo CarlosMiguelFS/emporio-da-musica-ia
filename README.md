@@ -61,7 +61,7 @@ customer message
 │   ├── guardrails.py   input and output checks
 │   └── observability.py, data.py, settings.py, chat_ui.py, text_utils.py
 ├── data/               the CSVs and the manual as received, plus politicas.md (manual as text)
-├── tests/              243 tests, no API needed
+├── tests/              250 tests, no API needed
 ├── evals/              real conversations against the model and the last report
 └── conversations/      5 example conversations
 ```
@@ -77,7 +77,7 @@ The agent answers those by itself and hands to the team what needs a person.
 | Data lookups | `tools.py`, `cart.py` | Products, promotions, orders, installments, catalog and cart. Values are computed in Python, not by the model. |
 | Policies | `rag.py` | Keyword search over the 25 sections of the manual; the top 3 go to the model. A short list of customer words the manual doesn't use ("onde vocês ficam?" -> endereço). |
 | Guardrails | `guardrails.py`, `cart.py` | Input and output checks and the order rules. What each one really guarantees is in the next section. |
-| Evidence | `tests/`, `evals/`, `observability.py`, `conversations/` | 243 tests without the API, 41 cases against the real model, one log line per answer, 5 example conversations. |
+| Evidence | `tests/`, `evals/`, `observability.py`, `conversations/` | 250 tests without the API, 42 cases against the real model, one log line per answer, 5 example conversations. |
 
 **Optional extension: MCP.** `mcp_server.py` exposes the same tools (data, manual, cart) to other
 MCP clients. It is not required by the challenge. It exposes the tools only: a message that
@@ -95,14 +95,15 @@ So for each rule that matters I checked who really guarantees it, and how that i
 | Personal data | **Code.** CPF, card, e-mail and phone are masked before the model and the logs; customers' contacts are never loaded | `test_guardrails.py`, `test_tools.py`; eval `cpf_sent` |
 | Someone else's order | **Code.** Order number + first name, with limits per conversation, per order and per server | `test_tools.py`; eval `order_someone_else` |
 | No order without the customer | **Code** in the chat: the order is the exact version the customer was shown (any change asks for a new review), and confirming needs a new customer message after it, or the Confirmar button. **The model** decides if that message means yes. **Not guaranteed in MCP**: the server can't see the customer | `test_cart.py`, `test_mcp.py`; evals `no_order_without_ok`, `checkout` |
-| The right products in the cart | **Code.** The model can only add products shown in a catalog, and adds nothing while answering a screen pick | `test_cart.py`; evals `screen_pick`, `direct_add` |
+| The right products in the cart | **Code.** "Quero o 2" goes to `pick_from_catalog`, which takes the product from the numbers of the catalog on the screen, even one the code made and the model never saw. A product id from the model is only accepted if it was shown in a catalog, and nothing is added while answering a screen pick | `test_cart.py`; evals `pick_after_code_catalog`, `screen_pick`, `direct_add` |
+| Complaints get the team and the 24 hours | **Code.** If the message is a complaint (broken, defect, "chateado"...) and the answer doesn't have the 24 business hours, the code adds the team contact and the deadline of the manual (7.3) | `test_agent.py`; eval `complaint` |
 | Return window | **Code** for the data: for delivered orders the tool sends no date, and days are counted in Python from the date the customer gives. **Prompt** for asking that date, saying the 7 days are for online purchases, mentioning the 90-day warranty for defects and not deciding the return | `test_tools.py`; evals `return_received_date`, `return_no_order`, `defect_after_30_days` |
 | The catalog the answer talks about | **Code.** If the answer says it put options in the catalog but none was made, the code builds it with the same filters (category, brand and budget from the model's search, or from the customer's words), so the customer sees what the text says and nothing outside what was asked | `test_agent.py`; evals `budget_list`, `budget_in_words`, `budget_and_brand` |
 | Installments add up to the price | **Code.** Split in `Decimal`, rounded down, the last installment takes the cents left (11x of R$ 2.199,00 = 10x R$ 199,90 + R$ 200,00) | `test_tools.py`; eval `installments_last` |
 | When the store opens | **Code.** Computed in Python with the store's time zone (UTC-4) and the manual's hours, and given to the model ready ("abre hoje às 09:00") | `test_prompt.py` |
 | Instruments the store doesn't sell | **Code.** If the customer asks for one (surdo, pandeiro, reco-reco...) and the answer doesn't mention it, the code adds "Só não temos surdo no catálogo agora." | `test_agent.py`; eval `not_in_catalog` |
 | Prompt injection | **Partly.** Patterns block the known phrasings; the layers above limit what a new one can do | `test_guardrails.py`; evals `injection`, `prompt_leak` |
-| Tone, one question per message, no emojis, no product list in the text, 24h for complaints | **Prompt only.** The evaluation measures it; nothing in the code enforces it | eval checks on every answer of each conversation |
+| Tone, one question per message, no emojis, no product list in the text | **Prompt only.** The evaluation measures it; nothing in the code enforces it | eval checks on every answer of each conversation |
 
 ## Why each part is here (and what I left out)
 
@@ -159,7 +160,7 @@ login (no real customer system to check against) and persisted history (one cust
 
 ## Evaluation
 
-Unit tests check the code; they can't tell how the model behaves. `evals/` runs 41 conversations
+Unit tests check the code; they can't tell how the model behaves. `evals/` runs 42 conversations
 against the real model and checks **every answer of each conversation**, not only the last one:
 technical errors, blocked prices, more than one question, more than 6 lines, prices without the
 thousands separator, emojis, products or cart repeated in the text. The last answer is also
@@ -167,14 +168,15 @@ checked against what the case expects, looking at what the customer gets: tools 
 called), patterns instead of loose words (an opening hour has to be written as "9h" or "09:00",
 not just contain a 9), a catalog that really reached the screen and only with what was asked
 (brand, budget), the cart contents and that no
-order was sent without confirmation. The 11 critical cases (fake discount, someone else's order,
+order was sent without confirmation. The 13 critical cases (fake discount, someone else's order,
 injection, checkout, no order without an ok, screen pick, return window, budget questions,
-brand and budget, an instrument the store doesn't sell) run 3 times.
+brand and budget, an instrument the store doesn't sell, complaint, picking from a catalog the
+model never saw) run 3 times.
 
-Last run: 62 of 63 runs without problems ([report](evals/results/latest.md)). The miss is real
-and it is the second time: a complaint answer left out the 24 business hours of the manual. That
-rule is only in the prompt, so it is the next one to move to code. Limits: the checks are rules,
-not a judgment of tone or helpfulness; 41 cases is a small set; most cases run once, so a rare failure can hide.
+Last run: 68 of 68 runs without problems ([report](evals/results/latest.md)); in 39 of the 42
+cases the answers were identical across runs. The complaint case had failed twice (no 24 business
+hours); that is now added by the code, not left to the prompt. Limits: the checks are rules,
+not a judgment of tone or helpfulness; 42 cases is a small set; most cases run once, so a rare failure can hide.
 
 The evaluation caught real problems: promotions without the discount percent, prices without the
 thousands separator, the store's own e-mail being masked, products listed twice (text and
