@@ -55,7 +55,7 @@ def show_events(cart):
                 lines.append('\nÉ só me falar o número. Ex.: "quero o 2" ou "2 do 5".')
         if event['kind'] == 'cart' and cart.items:
             lines.append(cart_text(cart))
-            lines.append('\nEstá certo? Responda "confirmo" ou me fala o que quer mudar.')
+            lines.append('\nPra fechar, responda "confirmo". Pra mudar, é só me falar.')
     return '\n'.join(lines)
 
 
