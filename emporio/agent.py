@@ -174,8 +174,10 @@ def ask(chat, text, customer_message):
         if part.function_call:
             calls.append(part.function_call)
 
-    allowed = guardrails.allowed_values(all_tool_results(history))
-    answer, events = guardrails.check_output(response.text or '', allowed, customer_message)
+    results = all_tool_results(history)
+    allowed = guardrails.allowed_values(results)
+    products = guardrails.product_prices(results)
+    answer, events = guardrails.check_output(response.text or '', allowed, customer_message, products)
     return response, calls, answer, events
 
 

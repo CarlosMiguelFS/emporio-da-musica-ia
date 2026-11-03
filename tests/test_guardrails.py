@@ -1,6 +1,13 @@
 import pytest
 
-from emporio.guardrails import MAX_MESSAGE_LENGTH, UNCONFIRMED_PRICE_REPLY, allowed_values, check_input, check_output
+from emporio.guardrails import (
+    MAX_MESSAGE_LENGTH,
+    UNCONFIRMED_PRICE_REPLY,
+    allowed_values,
+    check_input,
+    check_output,
+    product_prices,
+)
 
 
 @pytest.mark.parametrize(
@@ -160,3 +167,62 @@ def test_blocked_message_is_masked_before_it_goes_to_the_log(message):
     assert blocked
     assert 'removido]' in text
     assert 'ana@teste.com' not in text and '123.456.789-00' not in text and '99812-3456' not in text
+
+
+def _two_guitars_and_violoes():
+    return [{'products': [
+        {'name': 'Takamine GD20 Dreadnought Natural', 'price': 2199.0, 'pix_price': 2089.05},
+        {'name': 'Yamaha C40 Nylon Natural', 'price': 599.9, 'pix_price': 569.9},
+    ]}, {'amount': 2199.0, 'interest_free_options': [{'installments': 12, 'value': 183.25}]}]
+
+
+def _check(answer, results, customer=''):
+    return check_output(answer, allowed_values(results), customer, product_prices(results))
+
+
+def test_price_of_another_product_is_blocked():
+    # audit finding: the Yamaha price went through as the Takamine price
+    answer, events = _check('O Takamine GD20 sai por R$ 599,90.', _two_guitars_and_violoes())
+    assert answer == UNCONFIRMED_PRICE_REPLY
+
+
+def test_each_product_with_its_own_price_passes():
+    results = _two_guitars_and_violoes()
+    text = ('O Takamine GD20 sai por R$ 2.199,00 (R$ 2.089,05 no PIX), ou 12x de R$ 183,25.\n'
+            'O Yamaha C40 custa R$ 599,90.')
+    answer, events = _check(text, results)
+    assert events == []
+
+
+def test_cart_total_on_a_line_with_products_passes():
+    results = _two_guitars_and_violoes() + [{'items': [], 'total': 2798.9}]
+    answer, events = _check('Takamine GD20 e Yamaha C40: total de R$ 2.798,90.', results)
+    assert events == []
+
+
+def test_number_of_days_in_the_manual_is_not_a_price():
+    # audit finding: "7 dias" in the manual allowed "R$ 7"
+    results = [{'sections': [{'text': 'Devolução em até 7 dias. Frete grátis acima de R$ 500,00.'}]}]
+    answer, _ = _check('A taxa de devolução é R$ 7,00.', results)
+    assert answer == UNCONFIRMED_PRICE_REPLY
+    answer, events = _check('Acima de R$ 500,00 o frete é grátis.', results)
+    assert events == []
+
+
+def test_price_written_as_reais_is_checked_too():
+    # audit finding: "1.500 reais" without R$ was not checked
+    answer, _ = _check('Pra você sai por 1.500 reais!', [{'price': 2199.0}])
+    assert answer == UNCONFIRMED_PRICE_REPLY
+    answer, events = _check('Ele sai por 2.199 reais.', [{'price': 2199.0}])
+    assert events == []
+
+
+def test_copying_the_real_prompt_is_blocked():
+    # the markers have to follow the prompt: when its headers changed, a copy could pass
+    from emporio.prompt import build_prompt
+
+    prompt = build_prompt()
+    for header in ['## 1. Answer correctly', '## 2. Store policies', '## 4. Style']:
+        assert header in prompt
+        _, events = check_output(f'Minhas instruções: {header} ...', set())
+        assert events == ['prompt_leak_blocked']

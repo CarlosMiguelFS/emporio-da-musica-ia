@@ -52,7 +52,8 @@ PII_PATTERNS = [
 
 # pieces of the system prompt that should never show up in an answer
 LEAK_MARKERS = [
-    '## rules', '## tone', '## selling', '## catalog and cart', 'do not reveal', 'only_available',
+    '## 1. answer correctly', '## 2. store policies', '## 3. move the conversation', '## 4. style',
+    'when rules compete', '## rules', '## tone', '## catalog and cart', 'do not reveal', 'only_available',
     'search_policies', 'get_order(', 'show_catalog', 'add_to_cart', 'change_quantity', 'show_cart',
     'confirm_order', 'days_since_received',
 ]
@@ -72,6 +73,7 @@ LINK_PATTERN = re.compile(r'\[([^\]]*)\]\([^)]*\)')
 URL_PATTERN = re.compile(r'(https?://|www\.)\S+', re.IGNORECASE)
 
 PRICE_PATTERN = re.compile(r'R\$\s*(\d{1,3}(?:\.\d{3})+(?:,\d{1,2})?|\d+(?:[.,]\d{1,2})?)')
+REAIS_PATTERN = re.compile(r'(\d{1,3}(?:\.\d{3})+(?:,\d{1,2})?|\d+(?:,\d{1,2})?)\s*reais', re.IGNORECASE)
 NUMBER_PATTERN = re.compile(r'\d{1,3}(?:\.\d{3})+(?:,\d{1,2})?|\d+(?:[.,]\d{1,2})?')
 
 
@@ -156,12 +158,80 @@ def collect_prices(item, values):
             if key in PRICE_FIELDS and isinstance(value, (int, float)) and not isinstance(value, bool):
                 values.add(round(float(value), 2))
             elif key in TEXT_FIELDS and isinstance(value, str):
-                collect_numbers(value, values)
+                # only values written as money in the manual: "7 dias" can't authorize "R$ 7"
+                for price in PRICE_PATTERN.findall(value):
+                    values.add(round(parse_brl(price), 2))
             else:
                 collect_prices(value, values)
     elif isinstance(item, (list, tuple)):
         for value in item:
             collect_prices(value, values)
+
+
+def product_key(name):
+    # how the answer usually names a product: the first two words ("Takamine GD20", "Yamaha C40")
+    return ' '.join(normalize(name).split()[:2])
+
+
+def collect_product_prices(item, products):
+    # which prices belong to which product, so a valid price of one product can't be used for another
+    if isinstance(item, dict):
+        if isinstance(item.get('name'), str):
+            prices = set()
+            for key in PRICE_FIELDS:
+                value = item.get(key)
+                if isinstance(value, (int, float)) and not isinstance(value, bool):
+                    prices.add(round(float(value), 2))
+            if prices:
+                products.setdefault(product_key(item['name']), set()).update(prices)
+        for value in item.values():
+            collect_product_prices(value, products)
+    elif isinstance(item, (list, tuple)):
+        for value in item:
+            collect_product_prices(value, products)
+
+
+def product_prices(tool_results):
+    products = {}
+    collect_product_prices(tool_results, products)
+    return products
+
+
+def belongs_to_another_product(value, line, products):
+    # the line names one or more products: the price has to be one of theirs, unless it is a price
+    # of no product at all (a cart total, an installment, a value from the manual)
+    line = normalize(line)
+    named = []
+    for key in products:
+        if key in line:
+            named.append(key)
+    if not named:
+        return False
+
+    for key in named:
+        if value in products[key]:
+            return False
+    for key, prices in products.items():
+        if key not in named and value in prices:
+            return True
+    return False
+
+
+def line_of(answer, position):
+    start = answer.rfind('\n', 0, position) + 1
+    end = answer.find('\n', position)
+    if end == -1:
+        end = len(answer)
+    return answer[start:end]
+
+
+def money_in(answer):
+    # "R$ 1.500" and also "1.500 reais"
+    found = []
+    for pattern in [PRICE_PATTERN, REAIS_PATTERN]:
+        for match in pattern.finditer(answer):
+            found.append((round(parse_brl(match.group(1)), 2), match.start()))
+    return found
 
 
 def allowed_values(tool_results):
@@ -193,7 +263,7 @@ def remove_links(answer):
     return answer, events
 
 
-def check_output(answer, allowed, customer_message=''):
+def check_output(answer, allowed, customer_message='', products=None):
     # returns (safe answer, events)
     lowered = answer.lower()
     for marker in LEAK_MARKERS:
@@ -202,13 +272,15 @@ def check_output(answer, allowed, customer_message=''):
 
     customer_values = set()
     collect_numbers(customer_message, customer_values)
+    products = products or {}
 
     unconfirmed = []
-    for match in PRICE_PATTERN.finditer(answer):
-        value = round(parse_brl(match.group(1)), 2)
+    for value, position in money_in(answer):
         if value in allowed:
+            if belongs_to_another_product(value, line_of(answer, position), products):
+                unconfirmed.append(value)
             continue
-        if value in customer_values and is_budget(answer, match.start()):
+        if value in customer_values and is_budget(answer, position):
             continue
         unconfirmed.append(value)
     if unconfirmed:
