@@ -7,32 +7,41 @@ the confirmed order to a store attendant, who creates the payment link.
 
 ## Running
 
-Requires **Python 3.11+** (some pinned libraries don't install on 3.10) and a Gemini API key
-(<https://aistudio.google.com/apikey>).
+Requires **Python 3.11+** (some pinned libraries don't install on 3.10) and a Gemini API key,
+free at <https://aistudio.google.com/apikey>.
 
-Quick start (Windows PowerShell; on Linux/macOS use `source .venv/bin/activate` and `cp`):
+Quick start in Windows PowerShell. It calls the Python of the environment directly, so there is
+no need to activate it (PowerShell often blocks `activate` scripts):
 
-```bash
+```powershell
+git clone https://github.com/CarlosMiguelFS/emporio-da-musica-ia.git
+cd emporio-da-musica-ia
 python -m venv .venv
-.venv\Scripts\activate
-pip install -r requirements.txt     # or requirements-dev.txt to also get pytest and ruff
-copy .env.example .env              # then open .env and paste your Gemini key
-streamlit run app.py                # then open http://localhost:8501 in the browser
+.venv\Scripts\python.exe -m pip install -r requirements.txt
+Copy-Item .env.example .env                        # then open .env and paste your Gemini key
+.venv\Scripts\python.exe -m streamlit run app.py   # then open http://localhost:8501
 ```
 
-The browser doesn't open by itself (the app runs headless, see `.streamlit/config.toml`).
-The `.env` file is git-ignored, so the key never goes to the repository. In it, `MODELS` is
-optional: if the first model is down, the next one answers.
+On Windows, clone into a short folder (e.g. `C:\projects`): Streamlit installs files with long
+paths, and in a very deep folder `pip` fails with "WinError 206". On Linux or macOS use `.venv/bin/python` instead of `.venv\Scripts\python.exe` and
+`cp .env.example .env`. The browser doesn't open by itself (the app runs headless, see
+`.streamlit/config.toml`). The `.env` file is git-ignored, so the key never goes to the
+repository. In it, `MODELS` is optional: if the first model is down, the next one answers.
 
-Other commands:
+Without an API key you can still run the tests, read the [example conversations](conversations/)
+and the [evaluation report](evals/results/latest.md), all made with the real model.
 
-```bash
-streamlit run app.py                # chat in the browser, with catalog and cart buttons
+Other commands (from the project folder, with `.venv\Scripts\python.exe` as `python`):
+
+```powershell
+python -m streamlit run app.py      # chat in the browser, with catalog and cart buttons
 python main.py                      # chat in the terminal (catalog as a numbered list)
 python main.py --debug --save       # shows the tools called / saves the chat, masked, in logs/
 python mcp_server.py                # the same tools as an MCP server (stdio)
 python -m emporio.observability     # summary of the logs
-pytest                              # tests, no API key needed
+python -m pip install -r requirements-dev.txt
+python -m pytest                    # 261 tests, no API key needed
+python -m ruff check .              # lint
 python -m evals.run_evals --runs 1  # evaluation against the real model (uses the API)
 ```
 
