@@ -1,0 +1,16 @@
+[client]
+# never show a traceback on the page: errors go to logs/ only
+showErrorDetails = "none"
+# hides the developer menu (rerun, settings, deploy) from the customer
+toolbarMode = "minimal"
+
+[server]
+# only this machine can open the chat; the default listens on the whole network
+address = "localhost"
+headless = true
+
+[browser]
+gatherUsageStats = false
+
+[theme]
+primaryColor = "#1B5076"
