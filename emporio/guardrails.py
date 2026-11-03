@@ -44,8 +44,7 @@ INJECTION_PATTERNS = [
 PII_PATTERNS = [
     ('[cartão removido]', r'\b(?:\d[ -]?){13,19}\b'),
     ('[CPF removido]', r'\b\d{3}\.?\d{3}\.?\d{3}-?\d{2}\b'),
-    # the domain can't end with ".", otherwise the period that ends a sentence becomes part of
-    # the e-mail and the store's own address stops matching STORE_CONTACTS
+    # the domain can't end with ".": the period that ends a sentence is not part of the e-mail
     ('[e-mail removido]', r'[\w.+-]+@[\w-]+(?:\.[\w-]+)+'),
     ('[telefone removido]', r'\(?\b\d{2}\)?\s?9?\d{4}-?\d{4}\b'),
 ]
@@ -58,19 +57,20 @@ LEAK_MARKERS = [
     'confirm_order', 'days_since_received',
 ]
 
-# a customer's number only counts as a price in the answer when it is a budget ("até R$ 1.000").
-# Without this, "o gerente disse que sai por R$ 1.500" went through as "sai por R$ 1.500"
-REFUSAL_WORDS = ['nao posso', 'nao consigo', 'nao confirmo', 'nao existe', 'nao temos', 'nao tenho', 'nao vale',
-                 'nao esta valendo', 'nao e possivel', 'nao e o preco', 'infelizmente']
+# a customer's number only passes as a budget ("até R$ 1.000") or when the answer says no to it
+# only phrases that say no to the value itself: "infelizmente custa R$ 1.500" is not a refusal
+REFUSAL_WORDS = ['nao posso confirmar', 'nao consigo confirmar', 'nao confirmo', 'nao tenho essa informacao',
+                 'nao tenho informacao', 'nao e o preco', 'nao e esse o preco', 'nao vale', 'nao esta valendo']
+TURN_WORDS = [' mas ', ' porem ', ' so que ', ' entretanto ']
 GENERIC_WORDS = ['bateria', 'acustica', 'teclado', 'sintetizador', 'violao', 'guitarra', 'baixo', 'ukulele']
 BUDGET_WORDS = ['ate', 'orcamento', 'abaixo de', 'menos de', 'no maximo', 'limite', 'faixa de', 'acima de']
 
-# the tool fields that hold money, and the ones with manual text (prices written in the policies)
+# tool fields that hold money, and the manual text
 PRICE_FIELDS = ['price', 'promo_price', 'pix_price', 'final_price', 'value', 'last_value', 'unit_price', 'total',
                 'pix_total', 'from_price', 'amount']
 TEXT_FIELDS = ['text']
 
-# markdown images load on their own in the browser and can send data to another site
+# markdown images load by themselves and can send data to another site
 IMAGE_PATTERN = re.compile(r'!\[[^\]]*\]\([^)]*\)')
 LINK_PATTERN = re.compile(r'\[([^\]]*)\]\([^)]*\)')
 URL_PATTERN = re.compile(r'(https?://|www\.)\S+', re.IGNORECASE)
@@ -116,7 +116,7 @@ def check_input(message):
         message = message[:MAX_MESSAGE_LENGTH]
         events.append('input_truncated')
 
-    # mask first: a blocked message is logged too, and it can't take a CPF or e-mail to the logs
+    # mask first: a blocked message is logged too
     message, found = mask_pii(message)
     for label in found:
         events.append(f'input_pii_masked:{label}')
@@ -154,14 +154,13 @@ def collect_numbers(item, values):
 
 
 def collect_prices(item, values):
-    # only fields that are money, and the text of the manual. Before, every number counted:
-    # a product id (123) or the stock (15) could be quoted as "R$ 123,00" and pass
+    # only money fields and the manual text: ids and stock are not prices
     if isinstance(item, dict):
         for key, value in item.items():
             if key in PRICE_FIELDS and isinstance(value, (int, float)) and not isinstance(value, bool):
                 values.add(round(float(value), 2))
             elif key in TEXT_FIELDS and isinstance(value, str):
-                # only values written as money in the manual: "7 dias" can't authorize "R$ 7"
+                # only money from the manual: "7 dias" is not R$ 7
                 for price in PRICE_PATTERN.findall(value):
                     values.add(round(parse_brl(price), 2))
             else:
@@ -172,8 +171,7 @@ def collect_prices(item, values):
 
 
 def name_words(name):
-    # generic words open many names ("Bateria Acústica Yamaha...", "Bateria Acústica Pearl...")
-    # and made two drums share the same key, so they are left out
+    # generic words like "bateria acústica" would give two drums the same key
     words = re.sub(r'[^a-z0-9]+', ' ', normalize(name)).split()
     while words and words[0] in GENERIC_WORDS:
         words = words[1:]
@@ -181,8 +179,7 @@ def name_words(name):
 
 
 def product_keys(names):
-    # the shortest start of each name (at least 2 words) that no other product has:
-    # "takamine gd20", "pearl kit", "yamaha kit 1" and "yamaha kit 3"
+    # shortest start of the name that no other product has: "pearl kit", "yamaha kit 1"
     keys = {}
     all_words = []
     for name in names:
@@ -203,7 +200,7 @@ def product_keys(names):
 
 
 def collect_product_prices(item, products):
-    # which prices belong to which product, so a valid price of one product can't be used for another
+    # which prices belong to which product
     if isinstance(item, dict):
         if isinstance(item.get('name'), str):
             prices = set()
@@ -231,8 +228,7 @@ def product_prices(tool_results):
 
 
 def belongs_to_another_product(value, line, products):
-    # the line names one or more products: the price has to be one of theirs, unless it is a price
-    # of no product at all (a cart total, an installment, a value from the manual)
+    # on a line that names a product the price must be that product's (totals and installments pass)
     line = ' ' + re.sub(r'[^a-z0-9]+', ' ', normalize(line)) + ' '
     named = []
     for key in products:
@@ -283,13 +279,21 @@ def is_budget(answer, position):
 
 
 def is_refusal(answer, position):
-    # "não posso confirmar R$ 1.500": repeating the customer's value to say no is correct.
-    # Only the sentence of the value counts, so a "não" from another sentence doesn't free it
+    # "não posso confirmar R$ 1.500" is a right answer; only the same sentence counts
     start = max(answer.rfind('.', 0, position), answer.rfind('!', 0, position), answer.rfind('?', 0, position),
                 answer.rfind('\n', 0, position))
-    before = normalize(answer[start + 1:position])
+    before = ' ' + normalize(answer[start + 1:position])
     for words in REFUSAL_WORDS:
-        if words in before:
+        place = before.rfind(words)
+        if place == -1:
+            continue
+        # "não posso confirmar o desconto, mas custa R$ 1.500": after the "mas" it is a price again
+        after_refusal = before[place:]
+        turned = False
+        for turn in TURN_WORDS:
+            if turn in after_refusal:
+                turned = True
+        if not turned:
             return True
     return False
 
