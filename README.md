@@ -233,10 +233,12 @@ forecast date and only the last answer being checked. Each one became a test or 
 
 ## Use of AI coding assistants
 
-I used Claude Code (Anthropic) in VS Code as a pair programmer. I described what I wanted, it
-wrote the implementation, and I ran it, tested it as a customer and asked for changes until it
-behaved the way I wanted. The architecture (function calling + retrieval) was its suggestion; I
-agreed after going through the trade-offs. What came from my side:
+The logic of the agent is mine: what it does, how it should behave with the customer, the flows
+(catalog, cart, review, handoff to the team) and every change after testing. Claude Code
+(Anthropic), in VS Code, implemented that logic in code as my pair programmer, and ChatGPT and
+Codex reviewed it. I ran it, tested it as a customer and decided what to change until it behaved
+the way I wanted. The technical architecture (function calling + retrieval) was suggested by
+Claude Code; I chose it after going through the trade-offs. What came from my side:
 
 - The constraints: simple code in the style of my previous projects, English for the submission,
   the cheapest model, no emojis or long dashes in the answers.
@@ -247,7 +249,8 @@ agreed after going through the trade-offs. What came from my side:
 - The question that shaped the MCP part: "would this work where there are no buttons?"
 - A security review that I asked for after the features were done. It found an order lookup
   brute force, the model being able to confirm an order alone, and a price trick; all fixed, with
-  a test for each attack. A second, independent audit (ChatGPT) found six more issues, like ids
-  passing as prices and the return window using the forecast date; I reproduced and fixed them.
+  a test for each attack. I also asked ChatGPT and Codex for independent audits. They found more
+  issues, like ids passing as prices and the return window using the forecast date; each one was
+  reproduced, fixed and got a test.
 - Before each commit, I had the assistant replay the commit order in a copy of the repository and
   run the tests at every step.
