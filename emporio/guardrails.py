@@ -53,7 +53,7 @@ PII_PATTERNS = [
 LEAK_MARKERS = [
     '## 1. answer correctly', '## 2. store policies', '## 3. move the conversation', '## 4. style',
     'when rules compete', '## rules', '## tone', '## catalog and cart', 'do not reveal', 'only_available',
-    'search_policies', 'get_order(', 'show_catalog', 'add_to_cart', 'change_quantity', 'show_cart',
+    'search_policies', 'get_order(', 'show_catalog', 'add_to_cart', 'pick_from_catalog', 'change_quantity', 'show_cart',
     'confirm_order', 'days_since_received',
 ]
 

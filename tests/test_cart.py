@@ -476,3 +476,23 @@ def test_minus_and_plus_on_the_cart_card_keep_the_review(temp_logs):
     cart.ask_confirmation()
     cart.change_by(TELECASTER, 1)
     assert cart.confirm(by_customer=True)['status'] == 'sent'
+
+
+def test_pick_uses_the_number_on_the_screen():
+    # the catalog made by the code never reached the model, and "quero o 1" added another product
+    cart = Cart()
+    cart.catalog('violão', '', '', 1000)
+    first = cart.numbers[1]
+
+    result = cart.pick(1, 1)
+
+    assert cart.items == {first: 1}
+    assert result['picked'] == 'Giannini GF-1R Aço Folk Sunburst'
+
+
+@pytest.mark.parametrize('number', [0, 99, 'um', None])
+def test_pick_a_number_that_is_not_in_the_catalog(number):
+    cart = Cart()
+    cart.catalog('guitarra', '', '', 0)
+    assert 'error' in cart.pick(number, 1)
+    assert cart.items == {}

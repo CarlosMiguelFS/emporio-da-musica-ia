@@ -18,8 +18,8 @@ def test_every_tool_is_registered():
     for tool in tools:
         names.append(tool.name)
     assert names == ['search_products', 'active_promotions', 'get_order', 'installment_options', 'search_policies',
-                     'days_since_received', 'show_catalog', 'add_to_cart', 'change_quantity', 'show_cart',
-                     'confirm_order']
+                     'days_since_received', 'show_catalog', 'add_to_cart', 'pick_from_catalog', 'change_quantity',
+                     'show_cart', 'confirm_order']
 
 
 def test_mcp_keeps_one_cart_per_session():

@@ -94,6 +94,21 @@ def add_to_cart(session_id: str, product_id: int, quantity: int) -> dict:
 
 
 @server.tool(annotations=changes_cart)
+def pick_from_catalog(session_id: str, number: int, quantity: int) -> dict:
+    """Adds the product with this number in the last catalog ("quero o 2").
+
+    Args:
+        session_id: id of the conversation.
+        number: the catalog number the customer said.
+        quantity: units to add.
+    """
+    cart = get_cart(session_id)
+    if cart is None:
+        return BAD_SESSION
+    return with_text(cart, cart.pick(number, quantity))
+
+
+@server.tool(annotations=changes_cart)
 def change_quantity(session_id: str, product_id: int, quantity: int) -> dict:
     """Sets the quantity of a product in the cart. 0 removes it.
 

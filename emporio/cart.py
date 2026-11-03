@@ -308,6 +308,19 @@ class Cart:
                              'Chame show_catalog com o nome do produto em term e use o product_id que voltar.'}
         return self.add(product_id, quantity)
 
+    def pick(self, number, quantity):
+        # "quero o 1": the number is the one on the screen, even when the code made the catalog
+        try:
+            number = int(number)
+        except (TypeError, ValueError):
+            number = 0
+        if number not in self.numbers:
+            return {'error': f'Não tem o número {number} no último catálogo. Pergunte de novo ao cliente.'}
+        result = self.add_from_model(self.numbers[number], quantity)
+        if 'error' not in result:
+            result['picked'] = find_product(self.numbers[number])['name']
+        return result
+
     def set_quantity(self, product_id, quantity, seen_by_customer=False):
         product = find_product(product_id)
         if not product or product['id'] not in self.items:
@@ -540,14 +553,24 @@ def cart_tools(cart):
         return cart.catalog(categories, term, brand, max_price)
 
     def add_to_cart(product_id: int, quantity: int) -> dict:
-        """Adds a product to the cart. If it is already there the quantity adds up. When the
-        customer picks by the catalog number ("quero o 2"), use the product_id of that number.
+        """Adds a product to the cart by its product_id. If it is already there the quantity adds
+        up. When the customer picks by the catalog number ("quero o 2"), use pick_from_catalog.
 
         Args:
             product_id: product_id from show_catalog or search_products.
             quantity: how many units to add.
         """
         return cart.add_from_model(product_id, quantity)
+
+    def pick_from_catalog(number: int, quantity: int) -> dict:
+        """Adds the product with this number in the last catalog shown to the customer
+        ("quero o 2", "2 do 5" means 2 units of number 5). Always use it for catalog numbers.
+
+        Args:
+            number: the catalog number the customer said.
+            quantity: how many units.
+        """
+        return cart.pick(number, quantity)
 
     def change_quantity(product_id: int, quantity: int) -> dict:
         """Sets the quantity of a product that is already in the cart. 0 removes it.
@@ -568,7 +591,7 @@ def cart_tools(cart):
         show_cart and after the customer clearly said the cart is right."""
         return cart.confirm()
 
-    return [show_catalog, add_to_cart, change_quantity, show_cart, confirm_order]
+    return [show_catalog, add_to_cart, pick_from_catalog, change_quantity, show_cart, confirm_order]
 
 
 def categories_in(message):
