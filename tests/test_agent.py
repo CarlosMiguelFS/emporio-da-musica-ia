@@ -476,3 +476,18 @@ def test_answer_says_which_instrument_the_store_does_not_have():
     # already said: nothing is added
     said = 'Não temos surdo no catálogo agora, mas separei guitarras e baterias.'
     assert agent.say_what_is_missing(said, message) == said
+
+
+def test_complaint_always_gets_the_contact_and_the_24_hours():
+    # the answers asked for the order and left out the team contact and the 24 business hours
+    message = 'meu violão chegou com o tampo rachado, tô muito chateado com vocês'
+    answer = agent.say_who_handles_complaints('Sinto muito! Me passa o número do pedido?', message)
+    assert '24 horas úteis' in answer
+    assert '3341-4444' in answer
+
+
+def test_complaint_note_is_not_repeated_or_added_to_other_questions():
+    complaint = 'veio com defeito'
+    already = 'Sinto muito! A equipe responde em até 24 horas úteis no (67) 3341-4444.'
+    assert agent.say_who_handles_complaints(already, complaint) == already
+    assert agent.say_who_handles_complaints('Abrimos às 9h.', 'que horas abre?') == 'Abrimos às 9h.'

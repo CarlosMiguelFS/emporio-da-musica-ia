@@ -8,7 +8,7 @@ from emporio import guardrails
 from emporio.cart import Cart, brand_in, budget_in, cart_tools, categories_in, items_not_sold
 from emporio.observability import describe_error, log_turn, safe_args
 from emporio.prompt import build_prompt
-from emporio.settings import STORE_PHONE
+from emporio.settings import STORE_EMAIL, STORE_PHONE
 from emporio.text_utils import normalize
 from emporio.tools import TOOLS, conversation_tools
 
@@ -36,6 +36,14 @@ EMPTY_ANSWER_NOTE = (
     'last message now, using the tool results you already have.'
 )
 EMPTY_REPLY = 'Desculpa, me enrolei aqui. Pode mandar sua pergunta de novo?'
+
+# words of a complaint about a product that arrived broken or with a defect (manual 7.3)
+COMPLAINT_WORDS = ['rachad', 'quebrad', 'trincad', 'amassad', 'arranhad', 'defeito', 'danificad', 'avaria',
+                   'estragad', 'nao funciona', 'veio errado', 'chegou errado', 'reclama', 'chateado', 'insatisfeit']
+COMPLAINT_NOTE = (
+    f'Para registrar e resolver, fala com a nossa equipe no WhatsApp {STORE_PHONE} ou no e-mail '
+    f'{STORE_EMAIL}: eles retornam em até 24 horas úteis.'
+)
 
 # counts the whole server: a new tab is a new conversation, so the 30 messages aren't enough
 MAX_MESSAGES_PER_MINUTE = 60
@@ -216,6 +224,21 @@ def say_what_is_missing(answer, message):
     return f"{answer}\n\nSó não temos {' nem '.join(missing)} no catálogo agora."
 
 
+def is_complaint(message):
+    words = normalize(message)
+    for word in COMPLAINT_WORDS:
+        if word in words:
+            return True
+    return False
+
+
+def say_who_handles_complaints(answer, message):
+    # manual 7.3: a complaint always gets the team contact and the 24 business hours
+    if not is_complaint(message) or '24' in answer:
+        return answer
+    return f'{answer}\n\n{COMPLAINT_NOTE}'
+
+
 def price_was_blocked(events):
     for event in events:
         if event.startswith('unconfirmed_price_blocked'):
@@ -290,6 +313,11 @@ def reply(chat, session_id, message):
         if checked != answer:
             answer = checked
             output_events.append('missing_item_added_by_code')
+
+        checked = say_who_handles_complaints(answer, message)
+        if checked != answer:
+            answer = checked
+            output_events.append('complaint_note_added_by_code')
 
     except Exception as error:
         record['model'] = chat.model
