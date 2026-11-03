@@ -75,7 +75,7 @@ def main():
     session = new_session_id()
     chat.cart.session_id = session
     history = []
-    print("Empório da Música — atendimento virtual (digite 'sair' para encerrar)")
+    print("Empório da Música: atendimento virtual (digite 'sair' para encerrar)")
     print(f'{PRIVACY_NOTICE}\n')
 
     while True:

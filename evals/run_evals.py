@@ -125,6 +125,8 @@ def check_every_answer(case, answer, tools, events):
         problems.append('price blocked twice: the customer got no price')
     elif 'price_retry' in events:
         problems.append('warning: answered a price from memory, fixed by the second chance')
+    if 'claim_removed' in events:
+        problems.append('warning: a sales claim not in the data was removed by the code')
 
     # the catalog and the cart are already on the screen, a list in the text repeats them
     if 'show_catalog' in tools and count_options(answer) > 1:
@@ -325,7 +327,7 @@ def write_report(results, runs):
             failed += 1
 
     lines = [
-        f'# Eval report — {datetime.now():%d/%m/%Y %H:%M}',
+        f'# Eval report, {datetime.now():%d/%m/%Y %H:%M}',
         '',
         f'- cases: {len(cases)}, runs per case: {runs} (critical cases run 3 times), total runs: {len(results)}',
         f'- runs with problems: {failed}',
