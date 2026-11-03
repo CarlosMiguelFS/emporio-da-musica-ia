@@ -215,6 +215,11 @@ def run_case(case, run_number, stamp):
     for product_id, quantity in case.get('start_cart', {}).items():
         chat.cart.add_from_screen(int(product_id), quantity)
 
+    # or with a catalog the code made, that the model never saw
+    start = case.get('start_catalog')
+    if start:
+        chat.cart.catalog(start['categories'], '', start.get('brand', ''), start.get('max_price', 0))
+
     # tools of the whole conversation, the cart tools are spread over the messages
     all_calls = []
     turns = []
