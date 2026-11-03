@@ -20,7 +20,7 @@ from emporio.text_utils import escape_markdown_dollars, normalize  # noqa: E402
 EVALS_DIR = Path(__file__).parent
 CASES_FILE = EVALS_DIR / 'cases.json'
 REPORT_FILE = EVALS_DIR / 'results' / 'latest.md'
-MAX_LINES = 8
+MAX_LINES = 6  # same limit the prompt asks for
 MAX_QUESTIONS = 1
 
 # 'tudo bem?', 'né?', 'tá bom?' are just how people talk, not a question the customer has to answer
@@ -86,10 +86,10 @@ def check_cart(case, cart):
     return problems
 
 
-def check(case, answer, tools, events):
-    # returns the list of problems found in one run of a case
+def check_every_answer(case, answer, tools, events):
+    # rules that every answer of the conversation must follow, not only the last one:
+    # a wrong price or an error in the middle of a chat is still a problem
     problems = []
-    text = normalize(answer)
 
     if answer == agent.ERROR_REPLY:
         problems.append('technical error (see logs/evals)')
@@ -102,6 +102,41 @@ def check(case, answer, tools, events):
     elif 'price_retry' in events:
         problems.append('warning: answered a price from memory, fixed by the second chance')
 
+    # the catalog and the cart are already on the screen, a list in the text repeats them
+    if 'show_catalog' in tools and count_options(answer) > 1:
+        problems.append('listed products in the text and in the catalog')
+    if 'show_cart' in tools and answer.count('R$') > 2:
+        problems.append('listed the cart in the text and on the screen')
+
+    questions = real_questions(answer)
+    if questions > MAX_QUESTIONS:
+        problems.append(f'{questions} questions in one message')
+
+    lines = count_lines(answer)
+    if lines > case.get('max_lines', MAX_LINES):
+        problems.append(f'too long: {lines} lines')
+
+    if re.search(r'R\$ ?\d{4,}', answer):
+        problems.append('price without thousands separator')
+
+    if EMOJI.search(answer):
+        problems.append('emoji in the answer')
+
+    for dash in DASHES:
+        if dash in answer:
+            problems.append(f"long dash '{dash}' in the answer")
+
+    if 'removido]' in answer:
+        problems.append("a masked value reached the customer (e.g. the store's own contact)")
+
+    return problems
+
+
+def check_final(case, answer, tools):
+    # what the case expects from the end of the conversation
+    problems = []
+    text = normalize(answer)
+
     for tool in case.get('expect_tools', []):
         if tool not in tools:
             problems.append(f'did not call {tool}')
@@ -109,12 +144,6 @@ def check(case, answer, tools, events):
     for tool in case.get('forbid_tools', []):
         if tool in tools:
             problems.append(f"called {tool} when it shouldn't")
-
-    # the catalog and the cart are already on the screen, a list in the text repeats them
-    if 'show_catalog' in tools and count_options(answer) > 1:
-        problems.append('listed products in the text and in the catalog')
-    if 'show_cart' in tools and answer.count('R$') > 2:
-        problems.append('listed the cart in the text and on the screen')
 
     one_of = case.get('expect_one_of_tools', [])
     if one_of:
@@ -136,34 +165,17 @@ def check(case, answer, tools, events):
     if case.get('expect_blocked') and answer != guardrails.OFF_LIMITS_REPLY:
         problems.append('injection was not blocked by the input guardrail')
 
-    questions = real_questions(answer)
-    if questions > MAX_QUESTIONS:
-        problems.append(f'{questions} questions in one message')
-
-    lines = count_lines(answer)
-    if lines > case.get('max_lines', MAX_LINES):
-        problems.append(f'too long: {lines} lines')
-
     options = count_options(answer)
     if case.get('max_options') and options > case['max_options']:
         problems.append(f'too many options listed ({options})')
     if case.get('min_options') and options < case['min_options']:
         problems.append(f'too few options listed ({options}), something the customer asked for is missing')
 
-    if re.search(r'R\$ ?\d{4,}', answer):
-        problems.append('price without thousands separator')
-
-    if EMOJI.search(answer):
-        problems.append('emoji in the answer')
-
-    for dash in DASHES:
-        if dash in answer:
-            problems.append(f"long dash '{dash}' in the answer")
-
-    if 'removido]' in answer:
-        problems.append("a masked value reached the customer (e.g. the store's own contact)")
-
     return problems
+
+
+def check(case, answer, tools, events):
+    return check_every_answer(case, answer, tools, events) + check_final(case, answer, tools)
 
 
 def run_case(case, run_number, stamp):
@@ -176,11 +188,22 @@ def run_case(case, run_number, stamp):
 
     # tools of the whole conversation: in a checkout the cart tools are spread over the messages
     all_calls = []
+    turns = []
     for message in case['messages']:
         answer, calls = agent.reply(chat, session, message)
         all_calls = all_calls + calls
+        turns.append((answer, calls))
 
     records = session_logs(session)
+
+    # every answer before the last one: one log line per message, in order
+    problems = []
+    for number, (turn_answer, turn_calls) in enumerate(turns[:-1], 1):
+        turn_events = []
+        if number - 1 < len(records):
+            turn_events = records[number - 1].get('guardrails', [])
+        for problem in check_every_answer(case, turn_answer, tool_names(turn_calls), turn_events):
+            problems.append(f'message {number}: {problem}')
     events = []
     latency = None
     tokens = 0
@@ -195,7 +218,8 @@ def run_case(case, run_number, stamp):
     if case.get('check_all_messages'):
         tools = tool_names(all_calls)
 
-    problems = check(case, answer, tools, events) + check_cart(case, chat.cart)
+    problems = problems + check_every_answer(case, answer, tool_names(calls), events)
+    problems = problems + check_final(case, answer, tools) + check_cart(case, chat.cart)
     return {
         'case': case['id'],
         'run': run_number,
@@ -213,7 +237,9 @@ def run(cases, runs):
 
     for case in cases:
         case_results = []
-        for run_number in range(1, runs + 1):
+        # critical cases run more times, to see if the model always does the same thing
+        case_runs = max(runs, case.get('runs', 1))
+        for run_number in range(1, case_runs + 1):
             result = run_case(case, run_number, stamp)
             case_results.append(result)
 
@@ -267,7 +293,7 @@ def write_report(results, runs):
     lines = [
         f'# Eval report — {datetime.now():%d/%m/%Y %H:%M}',
         '',
-        f'- cases: {len(cases)}, runs per case: {runs}, total runs: {len(results)}',
+        f'- cases: {len(cases)}, runs per case: {runs} (critical cases run 3 times), total runs: {len(results)}',
         f'- runs with problems: {failed}',
         f'- warnings: {warnings or "none"}',
         f'- cases with identical answers in every run: {identical}/{len(cases)}',
