@@ -17,8 +17,11 @@ def new_session_id():
 
 
 def purge_old_logs():
+    # also the subfolders: orders for the team and conversations saved with --save
     limit = datetime.now() - timedelta(days=RETENTION_DAYS)
-    for file in LOG_DIR.glob('*.jsonl'):
+    for file in LOG_DIR.rglob('*'):
+        if file.suffix not in ['.jsonl', '.md']:
+            continue
         last_change = datetime.fromtimestamp(file.stat().st_mtime)
         if last_change < limit:
             file.unlink()

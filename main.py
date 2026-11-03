@@ -6,10 +6,12 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+from emporio import observability  # noqa: E402
 from emporio.agent import ERROR_REPLY, new_chat, reply  # noqa: E402
 from emporio.cart import cart_text, catalog_text  # noqa: E402
+from emporio.guardrails import mask_pii  # noqa: E402
 from emporio.observability import describe_error, log_turn, new_session_id, purge_old_logs  # noqa: E402
-from emporio.settings import CONVERSATIONS_DIR, MAX_TURNS, PRIVACY_NOTICE, STORE_PHONE  # noqa: E402
+from emporio.settings import MAX_TURNS, PRIVACY_NOTICE, STORE_PHONE  # noqa: E402
 from emporio.text_utils import escape_markdown_dollars  # noqa: E402
 
 
@@ -21,12 +23,16 @@ def silence_internal_output():
 
 
 def save(history):
-    CONVERSATIONS_DIR.mkdir(exist_ok=True)
+    # a real customer's chat is personal data: it goes masked to logs/ (out of git, deleted after
+    # 30 days), never to conversations/, which holds the example conversations of the project
+    folder = observability.LOG_DIR / 'conversations'
+    folder.mkdir(parents=True, exist_ok=True)
     now = datetime.now()
-    path = CONVERSATIONS_DIR / f'conversation_{now:%Y%m%d_%H%M%S}.md'
+    path = folder / f'conversation_{now:%Y%m%d_%H%M%S}.md'
 
-    lines = [f'# Conversation — {now:%d/%m/%Y %H:%M}', '']
+    lines = [f'# Conversation, {now:%d/%m/%Y %H:%M}', '']
     for message, calls, answer in history:
+        message, _ = mask_pii(message)
         lines.append(f'**Customer:** {escape_markdown_dollars(message)}')
         lines.append('')
         for call in calls:
