@@ -29,7 +29,8 @@ MAX_VERSIONS = 5  # changes after that go to a person, so nobody floods the team
 TEAM_DIR = 'team'
 TEAM_FILE_NAME = 'orders.jsonl'
 EDITING_NOTE = 'Cliente está alterando o pedido. Não gere o link de pagamento ainda.'
-TOO_MANY_CHANGES = f'Esse pedido já foi alterado muitas vezes. Peça para o cliente falar com a equipe no {STORE_PHONE}.'
+SEND_FAILED = f'Não consegui enviar o pedido para a equipe agora. Peça para tentar de novo ou ligar no {STORE_PHONE}.'
+TOO_MANY_CHANGES =f'Esse pedido já foi alterado muitas vezes. Peça para o cliente falar com a equipe no {STORE_PHONE}.'
 
 
 def brl(value):
@@ -364,7 +365,8 @@ class Cart:
         # warn the team before they create the payment link
         if self.order and self.order['status'] == 'enviado para a equipe':
             self.order['status'] = 'em alteração'
-            self.tell_team('editing', EDITING_NOTE)
+            # if this warning fails to save, the new confirmation still sends what changed
+            self.tell_team(self.order['number'], self.order['version'], 'editing', EDITING_NOTE)
 
     def snapshot(self):
         items = {}
@@ -392,25 +394,31 @@ class Cart:
         if self.order and self.order['version'] >= MAX_VERSIONS:
             return {'error': TOO_MANY_CHANGES}
 
-        self.waiting_confirmation = False
-
+        # the order only counts as sent after the team file is written. If writing fails,
+        # nothing changes and the customer can try again
         if not self.order:
             # random, so two orders in the same second don't get the same number
             number = uuid.uuid4().hex[:6].upper()
+            if not self.tell_team(number, 1, 'new', 'Pedido novo, pode gerar o link de pagamento.'):
+                return {'error': SEND_FAILED}
             self.order = {'number': number, 'version': 1, 'items': self.snapshot(), 'status': 'enviado para a equipe'}
-            self.tell_team('new', 'Pedido novo, pode gerar o link de pagamento.')
+            self.waiting_confirmation = False
             return {'status': 'sent', 'order_number': number, 'version': 1, 'total': float(self.total())}
 
         changes = describe_changes(self.order['items'], self.snapshot())
-        self.order['version'] += 1
+        version = self.order['version'] + 1
+        note = f"Pedido alterado: {'; '.join(changes) or 'sem mudanças'}. Pode gerar o link."
+        if not self.tell_team(self.order['number'], version, 'changed', note):
+            return {'error': SEND_FAILED}
+        self.order['version'] = version
         self.order['items'] = self.snapshot()
         self.order['status'] = 'enviado para a equipe'
-        self.tell_team('changed', f"Pedido alterado: {'; '.join(changes) or 'sem mudanças'}. Pode gerar o link.")
-        return {'status': 'updated', 'order_number': self.order['number'], 'version': self.order['version'],
+        self.waiting_confirmation = False
+        return {'status': 'updated', 'order_number': self.order['number'], 'version': version,
                 'changes': changes, 'total': float(self.total())}
 
-    def tell_team(self, event, note):
-        # no personal data, only products and values
+    def tell_team(self, number, version, event, note):
+        # no personal data, only products and values. Returns False if the file couldn't be written
         items = []
         for line in self.lines():
             items.append({'product': line['product']['name'], 'quantity': line['quantity']})
@@ -418,8 +426,8 @@ class Cart:
         record = {
             'time': datetime.now().isoformat(timespec='seconds'),
             'session': self.session_id,
-            'order': self.order['number'],
-            'version': self.order['version'],
+            'order': number,
+            'version': version,
             'event': event,
             'note': note,
             'items': items,
@@ -427,9 +435,13 @@ class Cart:
         }
         # own folder, so the logs summary doesn't read the orders as conversation turns
         team_dir = observability.LOG_DIR / TEAM_DIR
-        team_dir.mkdir(parents=True, exist_ok=True)
-        with open(team_dir / TEAM_FILE_NAME, 'a', encoding='utf-8') as file:
-            file.write(json.dumps(record, ensure_ascii=False) + '\n')
+        try:
+            team_dir.mkdir(parents=True, exist_ok=True)
+            with open(team_dir / TEAM_FILE_NAME, 'a', encoding='utf-8') as file:
+                file.write(json.dumps(record, ensure_ascii=False) + '\n')
+        except OSError:
+            return False
+        return True
 
     def take_events(self):
         events = self.events

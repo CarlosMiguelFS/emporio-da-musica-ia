@@ -54,12 +54,17 @@ PII_PATTERNS = [
 LEAK_MARKERS = [
     '## rules', '## tone', '## selling', '## catalog and cart', 'do not reveal', 'only_available',
     'search_policies', 'get_order(', 'show_catalog', 'add_to_cart', 'change_quantity', 'show_cart',
-    'confirm_order',
+    'confirm_order', 'days_since_received',
 ]
 
 # a customer's number only counts as a price in the answer when it is a budget ("até R$ 1.000").
 # Without this, "o gerente disse que sai por R$ 1.500" went through as "sai por R$ 1.500"
 BUDGET_WORDS = ['ate', 'orcamento', 'abaixo de', 'menos de', 'no maximo', 'limite', 'faixa de', 'acima de']
+
+# the tool fields that hold money, and the ones with manual text (prices written in the policies)
+PRICE_FIELDS = ['price', 'promo_price', 'pix_price', 'final_price', 'value', 'unit_price', 'total', 'pix_total',
+                'from_price', 'amount']
+TEXT_FIELDS = ['text']
 
 # markdown images load on their own in the browser and can send data to another site
 IMAGE_PATTERN = re.compile(r'!\[[^\]]*\]\([^)]*\)')
@@ -106,13 +111,14 @@ def check_input(message):
         message = message[:MAX_MESSAGE_LENGTH]
         events.append('input_truncated')
 
-    if looks_like_injection(message):
-        events.append('prompt_injection_blocked')
-        return message, True, events
-
+    # mask first: a blocked message is logged too, and it can't take a CPF or e-mail to the logs
     message, found = mask_pii(message)
     for label in found:
         events.append(f'input_pii_masked:{label}')
+
+    if looks_like_injection(message):
+        events.append('prompt_injection_blocked')
+        return message, True, events
     return message, False, events
 
 
@@ -142,10 +148,26 @@ def collect_numbers(item, values):
             collect_numbers(value, values)
 
 
+def collect_prices(item, values):
+    # only fields that are money, and the text of the manual. Before, every number counted:
+    # a product id (123) or the stock (15) could be quoted as "R$ 123,00" and pass
+    if isinstance(item, dict):
+        for key, value in item.items():
+            if key in PRICE_FIELDS and isinstance(value, (int, float)) and not isinstance(value, bool):
+                values.add(round(float(value), 2))
+            elif key in TEXT_FIELDS and isinstance(value, str):
+                collect_numbers(value, values)
+            else:
+                collect_prices(value, values)
+    elif isinstance(item, (list, tuple)):
+        for value in item:
+            collect_prices(value, values)
+
+
 def allowed_values(tool_results):
-    # every number the answer may quote as a price: what came from the tools (data and manual)
+    # every value the answer may quote as a price
     values = set()
-    collect_numbers(tool_results, values)
+    collect_prices(tool_results, values)
     return values
 
 

@@ -355,3 +355,13 @@ def test_each_message_is_a_new_turn_for_the_cart(temp_logs):
     agent.reply(chat, 's1', 'oi')
     agent.reply(chat, 's1', 'oi de novo')
     assert chat.cart.turn == 2
+
+
+def test_answer_still_arrives_when_the_log_cant_be_written(monkeypatch, tmp_path):
+    # audit finding: a log that couldn't be written broke the answer
+    not_a_folder = tmp_path / 'logs'
+    not_a_folder.write_text('a file where the folder should be', encoding='utf-8')
+    monkeypatch.setattr(observability, 'LOG_DIR', not_a_folder)
+
+    answer, _ = agent.reply(ScriptedChat(['Oi! Como posso ajudar?']), 's1', 'oi')
+    assert answer == 'Oi! Como posso ajudar?'

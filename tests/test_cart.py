@@ -420,3 +420,23 @@ def test_two_orders_get_different_numbers():
     for _ in range(20):
         numbers.add(confirmed_cart().order['number'])
     assert len(numbers) == 20
+
+
+def test_order_is_not_marked_sent_when_the_team_file_fails(temp_logs, monkeypatch):
+    # audit finding: the order was marked as sent before the file was written
+    cart = Cart()
+    cart.add(TELECASTER, 1)
+    cart.ask_confirmation()
+    cart.new_turn()
+
+    def broken_open(*args, **kwargs):
+        raise OSError('disco cheio')
+
+    monkeypatch.setattr('builtins.open', broken_open)
+    result = cart.confirm()
+    assert 'error' in result
+    assert cart.order is None
+    assert cart.waiting_confirmation is True
+
+    monkeypatch.undo()
+    assert cart.confirm()['status'] == 'sent'

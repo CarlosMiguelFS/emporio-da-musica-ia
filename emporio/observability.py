@@ -52,14 +52,19 @@ def describe_error(error):
 
 
 def log_turn(record):
-    LOG_DIR.mkdir(exist_ok=True)
+    # a log that can't be written (full disk, no permission) must not break the customer's answer
     now = datetime.now()
     line = {'time': now.isoformat(timespec='seconds')}
     line.update(record)
 
     file_path = LOG_DIR / f'{now:%Y-%m-%d}.jsonl'
-    with open(file_path, 'a', encoding='utf-8') as file:
-        file.write(json.dumps(line, ensure_ascii=False) + '\n')
+    try:
+        LOG_DIR.mkdir(exist_ok=True)
+        with open(file_path, 'a', encoding='utf-8') as file:
+            file.write(json.dumps(line, ensure_ascii=False, default=str) + '\n')
+    except OSError:
+        return False
+    return True
 
 
 def read_logs():

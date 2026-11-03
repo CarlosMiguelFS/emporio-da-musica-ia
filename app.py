@@ -104,9 +104,11 @@ def show_cart():
         st.markdown(money(f'**Total: {brl(cart.total())}** (no PIX: {brl(cart.pix_total())})'))
         if st.button('Confirmar pedido', type='primary'):
             result = cart.confirm(by_customer=True)
-            if 'error' not in result:
+            if 'error' in result:
+                st.warning(result['error'])
+            else:
                 st.session_state.pending = 'Confirmo o pedido.'
-            st.rerun()
+                st.rerun()
 
 
 def show_message(message):
