@@ -260,15 +260,20 @@ output and order checks in `guardrails.py` and `cart.py`), **MCP** (`mcp_server.
 
 ## Use of AI coding assistants
 
-I built this agent with the help of AI coding assistants. I defined its logic and behavior,
-tested it as a customer and decided every change. **Claude Code** (Anthropic), in VS Code, was my
-pair programmer and wrote the code from my instructions. **ChatGPT** and **Codex** (OpenAI) were the auditors: they reviewed the code,
-reproduced failures and pointed out what to fix. The technical architecture (function calling +
-retrieval) was suggested by Claude Code; I chose it after going through the trade-offs. What came
-from my side:
+I used AI coding assistants throughout this project, and I directed the work. I designed how the
+agent should behave with customers: what it must look up, what it must never promise, how the
+catalog and cart should work and when an attendant takes over. I described each feature to
+**Claude Code** (Anthropic, in VS Code), which generated the code. Then I reviewed it, ran it,
+tested it as a customer and asked for changes until it behaved the way I wanted. **ChatGPT** and
+**Codex** (OpenAI) worked as independent reviewers: I took their findings, checked which ones were
+real and decided what to fix. The technical architecture (function calling + retrieval) was
+suggested by Claude Code; I chose it after going through the trade-offs. What came from my side:
 
-- The constraints: simple code in the style of my previous projects, English for the submission,
-  the cheapest model, no emojis or long dashes in the answers.
+- The code style: I used my previous projects, like
+  [pipeline_dados](https://github.com/CarlosMiguelFS/pipeline_dados), as the reference, and asked for
+  rewrites wherever the code didn't read like mine: explicit loops, few comments, no clever one-liners.
+- The constraints: English for the submission, the cheapest model, no emojis or long dashes in the
+  answers.
 - The features after testing the first version: guardrails, RAG, MCP, observability, and a
   WhatsApp-style catalog with a cart, because a list of names in a chat was hard to choose from.
 - The bugs I found talking to the agent: answers too long, the missing "$" in the UI, the cart
