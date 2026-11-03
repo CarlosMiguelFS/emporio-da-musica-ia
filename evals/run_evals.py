@@ -110,9 +110,11 @@ def check(case, answer, tools, events):
         if tool in tools:
             problems.append(f"called {tool} when it shouldn't")
 
-    # the catalog already shows the products, a list in the text repeats it
+    # the catalog and the cart are already on the screen, a list in the text repeats them
     if 'show_catalog' in tools and count_options(answer) > 1:
         problems.append('listed products in the text and in the catalog')
+    if 'show_cart' in tools and answer.count('R$') > 2:
+        problems.append('listed the cart in the text and on the screen')
 
     one_of = case.get('expect_one_of_tools', [])
     if one_of:
@@ -168,9 +170,9 @@ def run_case(case, run_number, stamp):
     session = f'eval-{stamp}-{case["id"]}-{run_number}'
     chat = agent.new_chat()
     chat.cart.session_id = session
-    # some cases start with products already picked on the screen
+    # some cases start with products already picked on the screen, like the Streamlit buttons do
     for product_id, quantity in case.get('start_cart', {}).items():
-        chat.cart.add(int(product_id), quantity)
+        chat.cart.add_from_screen(int(product_id), quantity)
 
     # tools of the whole conversation: in a checkout the cart tools are spread over the messages
     all_calls = []
