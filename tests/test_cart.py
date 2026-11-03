@@ -440,3 +440,40 @@ def test_order_is_not_marked_sent_when_the_team_file_fails(temp_logs, monkeypatc
 
     monkeypatch.undo()
     assert cart.confirm()['status'] == 'sent'
+
+
+def test_changing_the_cart_after_showing_it_needs_a_new_review(temp_logs):
+    # audit finding: the model changed the quantity after the customer saw the cart and confirmed 5
+    cart = Cart()
+    cart.catalog('guitarra', '', '', 0)
+    cart.add(TELECASTER, 1)
+    cart.ask_confirmation()
+    cart.new_turn()
+
+    cart.set_quantity(TELECASTER, 5)
+    assert 'error' in cart.confirm()
+    assert cart.order is None
+
+    cart.ask_confirmation()
+    cart.new_turn()
+    assert cart.confirm()['status'] == 'sent'
+    assert cart.order['items'] == {TELECASTER: ['Fender Telecaster Player Series', 5]}
+
+
+def test_adding_a_product_after_showing_the_cart_needs_a_new_review():
+    cart = Cart()
+    cart.catalog('guitarra', '', '', 0)
+    cart.add(TELECASTER, 1)
+    cart.ask_confirmation()
+    cart.new_turn()
+    cart.add_from_screen(LES_PAUL, 1)
+    assert 'error' in cart.confirm()
+
+
+def test_minus_and_plus_on_the_cart_card_keep_the_review(temp_logs):
+    # the customer is looking at the card when they click, so it is still the version they approve
+    cart = Cart()
+    cart.add(TELECASTER, 1)
+    cart.ask_confirmation()
+    cart.change_by(TELECASTER, 1)
+    assert cart.confirm(by_customer=True)['status'] == 'sent'

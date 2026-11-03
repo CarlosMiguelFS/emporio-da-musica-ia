@@ -267,6 +267,7 @@ class Cart:
             new_quantity = product['stock']
         self.items[product['id']] = new_quantity
 
+        self.cancel_confirmation()
         self.start_editing()
         result = self.summary()
         if limited:
@@ -293,7 +294,7 @@ class Cart:
                              'Chame show_catalog com o nome do produto em term e use o product_id que voltar.'}
         return self.add(product_id, quantity)
 
-    def set_quantity(self, product_id, quantity):
+    def set_quantity(self, product_id, quantity, seen_by_customer=False):
         product = find_product(product_id)
         if not product or product['id'] not in self.items:
             return {'error': 'Esse produto não está no carrinho.'}
@@ -304,13 +305,21 @@ class Cart:
         else:
             self.items[product['id']] = min(quantity, product['stock'])
 
+        if not seen_by_customer:
+            self.cancel_confirmation()
         self.start_editing()
         return self.summary()
 
     def change_by(self, product_id, step):
+        # the - and + on the cart card: the customer sees the new version right there
         if product_id not in self.items:
             return self.summary()
-        return self.set_quantity(product_id, self.items[product_id] + step)
+        return self.set_quantity(product_id, self.items[product_id] + step, seen_by_customer=True)
+
+    def cancel_confirmation(self):
+        # the customer approved the cart they saw. If it changes, it has to be shown again
+        self.waiting_confirmation = False
+        self.shown_on_turn = None
 
     def lines(self):
         lines = []
