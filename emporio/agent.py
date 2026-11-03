@@ -1,4 +1,5 @@
 import os
+import re
 import time
 
 from google import genai
@@ -8,7 +9,7 @@ from emporio import guardrails
 from emporio.cart import Cart, brand_in, budget_in, cart_tools, categories_in, items_not_sold
 from emporio.observability import describe_error, log_turn, safe_args
 from emporio.prompt import build_prompt
-from emporio.settings import STORE_EMAIL, STORE_PHONE
+from emporio.settings import STORE_EMAIL, STORE_PHONE, STORE_WHATSAPP
 from emporio.text_utils import normalize
 from emporio.tools import TOOLS, conversation_tools
 
@@ -232,9 +233,23 @@ def is_complaint(message):
     return False
 
 
+def has_deadline(answer):
+    # the whole deadline: "24" alone also matches "PRS SE Custom 24"
+    return re.search(r'\b24\s*(horas|h)\s*uteis\b', normalize(answer)) is not None
+
+
+def has_team_contact(answer):
+    for contact in [STORE_PHONE, STORE_WHATSAPP, STORE_EMAIL]:
+        if contact in answer:
+            return True
+    return False
+
+
 def say_who_handles_complaints(answer, message):
     # manual 7.3: a complaint always gets the team contact and the 24 business hours
-    if not is_complaint(message) or '24' in answer:
+    if not is_complaint(message):
+        return answer
+    if has_deadline(answer) and has_team_contact(answer):
         return answer
     return f'{answer}\n\n{COMPLAINT_NOTE}'
 

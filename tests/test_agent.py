@@ -491,3 +491,24 @@ def test_complaint_note_is_not_repeated_or_added_to_other_questions():
     already = 'Sinto muito! A equipe responde em até 24 horas úteis no (67) 3341-4444.'
     assert agent.say_who_handles_complaints(already, complaint) == already
     assert agent.say_who_handles_complaints('Abrimos às 9h.', 'que horas abre?') == 'Abrimos às 9h.'
+
+
+@pytest.mark.parametrize('answer', [
+    'Sinto muito! A PRS SE Custom 24 que você comprou vai ser trocada.',
+    'Sinto muito! A equipe te responde em até 24 horas úteis.',
+    'Sinto muito! Fala com a equipe no (67) 3341-4444.',
+])
+def test_complaint_note_is_added_when_deadline_or_contact_is_missing(answer):
+    # "24" inside a product name, deadline without contact, contact without deadline
+    result = agent.say_who_handles_complaints(answer, 'minha guitarra chegou quebrada')
+    assert result == f'{answer}\n\n{agent.COMPLAINT_NOTE}'
+
+
+def test_complaint_with_deadline_and_contact_stays_as_it_is():
+    answer = 'Sinto muito! Fala com a equipe no (67) 3341-4444, eles respondem em até 24 horas úteis.'
+    assert agent.say_who_handles_complaints(answer, 'veio com defeito') == answer
+
+
+def test_complaint_note_itself_has_deadline_and_contact():
+    assert agent.has_deadline(agent.COMPLAINT_NOTE)
+    assert agent.has_team_contact(agent.COMPLAINT_NOTE)
