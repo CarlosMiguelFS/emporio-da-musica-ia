@@ -23,7 +23,7 @@ REPORT_FILE = EVALS_DIR / 'results' / 'latest.md'
 MAX_LINES = 6  # same limit the prompt asks for
 MAX_QUESTIONS = 1
 
-# 'tudo bem?', 'né?', 'tá bom?' are just how people talk, not a question the customer has to answer
+# 'tudo bem?' and 'né?' are not real questions
 TAG_QUESTIONS = re.compile(r'(tudo bem|tudo certo|ne|viu|ta bom|ta|certo|beleza|ok)\s*(por ai|com voce)?\?')
 BULLET = re.compile(r'^\s*([-*•]|\d+[.)])\s+')
 PRODUCT_LINE = re.compile(r'^[^:]{3,60}: (de )?R\$')
@@ -84,7 +84,7 @@ def check_cart(case, cart):
     if case.get('forbid_order') and cart.order:
         problems.append('order was sent without the customer confirming')
 
-    # what the customer sees, not what the answer says: "separei no catálogo" with no catalog failed
+    # what the customer sees: the catalog has to reach the screen
     if case.get('expect_catalog_shown'):
         shown = False
         for event in cart.events:
@@ -92,12 +92,27 @@ def check_cart(case, cart):
                 shown = True
         if not shown:
             problems.append('no catalog reached the screen')
+
+    # and what is in it: "yamaha até 1000" can't show another brand or a more expensive one
+    wanted = case.get('expect_catalog_filter')
+    if wanted:
+        for event in cart.events:
+            if event['kind'] != 'catalog':
+                continue
+            for section in event['catalog']['sections']:
+                for group in section['brands']:
+                    for item in group['items']:
+                        product = item['product']
+                        if wanted.get('brand') and wanted['brand'] not in product['name']:
+                            problems.append(f"catalog shows {product['name']}, not {wanted['brand']}")
+                        price = product.get('promo_price', product['price'])
+                        if wanted.get('max_price') and price > wanted['max_price']:
+                            problems.append(f"catalog shows {product['name']} above R$ {wanted['max_price']}")
     return problems
 
 
 def check_every_answer(case, answer, tools, events):
-    # rules that every answer of the conversation must follow, not only the last one:
-    # a wrong price or an error in the middle of a chat is still a problem
+    # rules for every answer of the chat, not only the last one
     problems = []
 
     if answer == agent.ERROR_REPLY:
@@ -171,7 +186,7 @@ def check_final(case, answer, tools):
         if normalize(forbidden) in text:
             problems.append(f"answer has '{forbidden}'")
 
-    # a pattern instead of a loose word: "13" alone also matches "R$ 13.285"
+    # a pattern, not a loose word: "13" alone also matches "R$ 13.285"
     for pattern in case.get('must_match', []):
         if not re.search(pattern, text):
             problems.append(f"answer doesn't match '{pattern}'")
@@ -196,11 +211,11 @@ def run_case(case, run_number, stamp):
     session = f'eval-{stamp}-{case["id"]}-{run_number}'
     chat = agent.new_chat()
     chat.cart.session_id = session
-    # some cases start with products already picked on the screen, like the Streamlit buttons do
+    # some cases start with products picked on the screen
     for product_id, quantity in case.get('start_cart', {}).items():
         chat.cart.add_from_screen(int(product_id), quantity)
 
-    # tools of the whole conversation: in a checkout the cart tools are spread over the messages
+    # tools of the whole conversation, the cart tools are spread over the messages
     all_calls = []
     turns = []
     for message in case['messages']:
@@ -210,7 +225,7 @@ def run_case(case, run_number, stamp):
 
     records = session_logs(session)
 
-    # every answer before the last one: one log line per message, in order
+    # every answer before the last one (one log line per message)
     problems = []
     for number, (turn_answer, turn_calls) in enumerate(turns[:-1], 1):
         turn_events = []
@@ -251,7 +266,7 @@ def run(cases, runs):
 
     for case in cases:
         case_results = []
-        # critical cases run more times, to see if the model always does the same thing
+        # critical cases run more times to see the variation
         case_runs = max(runs, case.get('runs', 1))
         for run_number in range(1, case_runs + 1):
             result = run_case(case, run_number, stamp)
