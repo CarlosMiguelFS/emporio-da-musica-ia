@@ -70,6 +70,10 @@ PRICE_FIELDS = ['price', 'promo_price', 'pix_price', 'final_price', 'value', 'la
                 'pix_total', 'from_price', 'amount']
 TEXT_FIELDS = ['text']
 
+# claims the data doesn't have: in a test the agent said a violão was "um dos mais vendidos"
+UNSUPPORTED_CLAIMS = ['mais vendid', 'campeao de vendas', 'sucesso de vendas', 'melhor do mercado', 'mais procurad',
+                      'preferido dos clientes', 'queridinho', 'mais popular']
+
 # markdown images load by themselves and can send data to another site
 IMAGE_PATTERN = re.compile(r'!\[[^\]]*\]\([^)]*\)')
 LINK_PATTERN = re.compile(r'\[([^\]]*)\]\([^)]*\)')
@@ -310,6 +314,27 @@ def customer_numbers(message):
     return values
 
 
+def remove_claims(answer):
+    # takes out only the sentence with the claim, the rest of the answer stays
+    lines = []
+    removed = False
+    for line in answer.split('\n'):
+        kept = []
+        for sentence in re.split(r'(?<=[.!?])\s+', line):
+            has_claim = False
+            for claim in UNSUPPORTED_CLAIMS:
+                if claim in normalize(sentence):
+                    has_claim = True
+            if has_claim:
+                removed = True
+            else:
+                kept.append(sentence)
+        lines.append(' '.join(kept))
+    if not removed:
+        return answer, []
+    return '\n'.join(lines).strip(), ['claim_removed']
+
+
 def remove_links(answer):
     events = []
     if IMAGE_PATTERN.search(answer):
@@ -346,7 +371,9 @@ def check_output(answer, allowed, customer_message='', products=None):
     if unconfirmed:
         return UNCONFIRMED_PRICE_REPLY, [f'unconfirmed_price_blocked:{unconfirmed}']
 
-    answer, events = remove_links(answer)
+    answer, events = remove_claims(answer)
+    answer, link_events = remove_links(answer)
+    events = events + link_events
     answer, found = mask_pii(answer)
     for label in found:
         events.append(f'output_pii_masked:{label}')

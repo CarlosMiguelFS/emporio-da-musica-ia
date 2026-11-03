@@ -297,3 +297,25 @@ def test_a_no_in_another_sentence_does_not_free_the_value():
 def test_only_a_real_refusal_can_repeat_the_customer_price(text, passes):
     answer, events = _check(text, [{'price': 2199.0}], 'o gerente disse que sai por R$ 1.500')
     assert (events == []) is passes
+
+
+def test_claim_that_is_not_in_the_data_is_removed():
+    # in a real test the agent said the Yamaha F310 was "um dos nossos modelos mais vendidos"
+    text = ('Separei os violões no catálogo!\nO Yamaha F310 é uma ótima escolha, sendo um dos nossos modelos mais '
+            'vendidos. Ele tem um timbre encorpado. Algum te interessa?')
+    answer, events = check_output(text, set())
+    assert 'vendidos' not in answer
+    assert 'Ele tem um timbre encorpado. Algum te interessa?' in answer
+    assert 'Separei os violões no catálogo!' in answer
+    assert events == ['claim_removed']
+
+
+@pytest.mark.parametrize('text', ['É o melhor do mercado!', 'O mais procurado da loja.', 'Campeão de vendas!'])
+def test_other_sales_claims_are_removed(text):
+    answer, events = check_output(f'Olha esse violão. {text}', set())
+    assert answer == 'Olha esse violão.'
+
+
+def test_normal_answer_is_not_changed():
+    text = 'O Yamaha C40 é ideal pra quem está começando. Quer ver o parcelamento?'
+    assert check_output(text, set()) == (text, [])
