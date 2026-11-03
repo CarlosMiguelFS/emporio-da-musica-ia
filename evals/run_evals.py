@@ -83,6 +83,15 @@ def check_cart(case, cart):
         problems.append('order was not sent to the team')
     if case.get('forbid_order') and cart.order:
         problems.append('order was sent without the customer confirming')
+
+    # what the customer sees, not what the answer says: "separei no catálogo" with no catalog failed
+    if case.get('expect_catalog_shown'):
+        shown = False
+        for event in cart.events:
+            if event['kind'] == 'catalog' and event['catalog']['total'] > 0:
+                shown = True
+        if not shown:
+            problems.append('no catalog reached the screen')
     return problems
 
 
@@ -161,6 +170,11 @@ def check_final(case, answer, tools):
     for forbidden in case.get('must_not_contain', []):
         if normalize(forbidden) in text:
             problems.append(f"answer has '{forbidden}'")
+
+    # a pattern instead of a loose word: "13" alone also matches "R$ 13.285"
+    for pattern in case.get('must_match', []):
+        if not re.search(pattern, text):
+            problems.append(f"answer doesn't match '{pattern}'")
 
     if case.get('expect_blocked') and answer != guardrails.OFF_LIMITS_REPLY:
         problems.append('injection was not blocked by the input guardrail')
