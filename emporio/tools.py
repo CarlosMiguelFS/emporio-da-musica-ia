@@ -1,4 +1,5 @@
 import json
+import time
 from datetime import date
 
 import pandas as pd
@@ -15,7 +16,13 @@ PIX_DISCOUNT = 0.05
 MAX_RESULTS = 10
 MAX_TEXT_ARG = 100
 MAX_AMOUNT = 1_000_000
-MAX_ORDER_ATTEMPTS = 3
+
+# order lookup limits. A right answer doesn't reset them: before, someone could fail twice,
+# look up their own order and start again, forever
+MAX_ORDER_ATTEMPTS = 3  # wrong tries in one conversation
+MAX_TRIES_PER_ORDER = 3  # wrong tries on the same order number, from any conversation
+MAX_FAILS_ON_SERVER = 20  # wrong tries in the whole server
+LOCK_SECONDS = 15 * 60
 
 ORDER_STATUS = {
     'pending': 'aguardando confirmação do pagamento',
@@ -37,7 +44,45 @@ PAYMENT = {'pix': 'PIX', 'debit': 'cartão de débito', 'boleto': 'boleto'}
 ORDER_NOT_FOUND = 'Não encontrei um pedido com esse número e esse nome.'
 ORDER_LOCKED = f'Muitas tentativas sem sucesso. Por segurança, fale com a equipe no {STORE_PHONE}.'
 
-failed_attempts = 0
+order_fails = {}
+server_fails = []
+
+
+def new_attempts():
+    return {'failed': 0}
+
+
+# for whoever calls get_order without a conversation of its own (MCP server, tests)
+shared_attempts = new_attempts()
+
+
+def now():
+    return time.monotonic()
+
+
+def recent(times):
+    kept = []
+    for moment in times:
+        if now() - moment < LOCK_SECONDS:
+            kept.append(moment)
+    return kept
+
+
+def order_is_locked(order_id, attempts):
+    if attempts['failed'] >= MAX_ORDER_ATTEMPTS:
+        return True
+    if len(recent(order_fails.get(order_id, []))) >= MAX_TRIES_PER_ORDER:
+        return True
+    return len(recent(server_fails)) >= MAX_FAILS_ON_SERVER
+
+
+def register_fail(order_id, attempts, order_exists):
+    global server_fails
+    attempts['failed'] += 1
+    server_fails = recent(server_fails) + [now()]
+    # only real orders are kept, otherwise trying random numbers would fill the memory
+    if order_exists:
+        order_fails[order_id] = recent(order_fails.get(order_id, [])) + [now()]
 
 
 def clean_text(value):
@@ -150,26 +195,43 @@ def active_promotions() -> dict:
     return {'products': products}
 
 
-def get_order(order_id: int, customer_name: str) -> dict:
-    """Looks up status, items, tracking and dates of an order. Ask the customer for the order
+GET_ORDER_DOC = """Looks up status, items, tracking and dates of an order. Ask the customer for the order
     number and the name of the person who placed it before calling.
 
     Args:
         order_id: order number.
         customer_name: name given by the customer (first name is enough).
     """
-    global failed_attempts
-    if failed_attempts >= MAX_ORDER_ATTEMPTS:
-        return {'error': ORDER_LOCKED}
 
+
+def get_order(order_id: int, customer_name: str) -> dict:
+    return find_order(order_id, customer_name, shared_attempts)
+
+
+get_order.__doc__ = GET_ORDER_DOC
+
+
+def order_tool(attempts):
+    # each conversation counts its own wrong tries, one customer can't lock the others
+    def get_order(order_id: int, customer_name: str) -> dict:
+        return find_order(order_id, customer_name, attempts)
+
+    get_order.__doc__ = GET_ORDER_DOC
+    return get_order
+
+
+def find_order(order_id, customer_name, attempts):
     try:
         order_id = int(order_id)
     except (TypeError, ValueError):
         order_id = 0
 
+    if order_is_locked(order_id, attempts):
+        return {'error': ORDER_LOCKED}
+
     orders = ORDERS[ORDERS['order_id'] == order_id]
     if orders.empty:
-        failed_attempts += 1
+        register_fail(order_id, attempts, order_exists=False)
         return {'error': ORDER_NOT_FOUND}
     order = orders.iloc[0]
 
@@ -179,10 +241,8 @@ def get_order(order_id: int, customer_name: str) -> dict:
     first_name = normalize(customer['name']).split()[0]
     given_names = normalize(clean_text(customer_name)).split()
     if first_name not in given_names:
-        failed_attempts += 1
+        register_fail(order_id, attempts, order_exists=True)
         return {'error': ORDER_NOT_FOUND}
-
-    failed_attempts = 0
 
     items = []
     order_items = ORDER_ITEMS[ORDER_ITEMS['order_id'] == order_id].merge(PRODUCTS, on='product_id')
@@ -248,3 +308,15 @@ def installment_options(amount: float) -> dict:
 
 
 TOOLS = [search_products, active_promotions, get_order, installment_options, search_policies]
+
+
+def conversation_tools():
+    # same tools, but get_order counts the wrong tries of this conversation only
+    attempts = new_attempts()
+    tools = []
+    for tool in TOOLS:
+        if tool is get_order:
+            tools.append(order_tool(attempts))
+        else:
+            tools.append(tool)
+    return tools

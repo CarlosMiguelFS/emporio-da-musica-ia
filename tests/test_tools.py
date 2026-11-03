@@ -13,7 +13,9 @@ from emporio.tools import (
 
 @pytest.fixture(autouse=True)
 def reset_attempts():
-    tools.failed_attempts = 0
+    tools.shared_attempts['failed'] = 0
+    tools.order_fails.clear()
+    tools.server_fails.clear()
 
 
 def test_search_by_model():
@@ -83,6 +85,66 @@ def test_order_locks_after_failed_attempts():
     for _ in range(3):
         get_order(1, 'Ana')
     assert get_order(1, 'Pedro') == {'error': ORDER_LOCKED}
+
+
+def test_right_answer_does_not_reset_the_count():
+    # real attack: fail twice, look up your own order to reset, try again, forever
+    lookup = tools.order_tool(tools.new_attempts())
+    lookup(4, 'Ana')
+    lookup(8, 'Lucas')
+    assert 'status' in lookup(1, 'Pedro')
+    lookup(5, 'Maria')
+    assert lookup(1, 'Pedro') == {'error': ORDER_LOCKED}
+
+
+def test_one_customer_failing_does_not_lock_the_others():
+    attacker = tools.order_tool(tools.new_attempts())
+    customer = tools.order_tool(tools.new_attempts())
+    for order_id in [2, 3, 4]:
+        attacker(order_id, 'Ana')
+
+    assert attacker(1, 'Pedro') == {'error': ORDER_LOCKED}
+    assert customer(1, 'Pedro')['status'] == 'entregue'
+
+
+def test_same_order_locks_even_from_new_conversations():
+    # opening a new tab for each try doesn't help
+    for _ in range(3):
+        tools.order_tool(tools.new_attempts())(1, 'Ana')
+    assert tools.order_tool(tools.new_attempts())(1, 'Pedro') == {'error': ORDER_LOCKED}
+
+
+def test_too_many_fails_on_the_server_stops_lookups():
+    for order_id in range(100, 100 + tools.MAX_FAILS_ON_SERVER):
+        tools.order_tool(tools.new_attempts())(order_id, 'Ana')
+    assert tools.order_tool(tools.new_attempts())(1, 'Pedro') == {'error': ORDER_LOCKED}
+
+
+def test_lock_ends_after_some_time(monkeypatch):
+    clock = [1000.0]
+    monkeypatch.setattr(tools, 'now', lambda: clock[0])
+    for _ in range(3):
+        tools.order_tool(tools.new_attempts())(1, 'Ana')
+    assert tools.order_tool(tools.new_attempts())(1, 'Pedro') == {'error': ORDER_LOCKED}
+
+    clock[0] += tools.LOCK_SECONDS + 1
+    assert tools.order_tool(tools.new_attempts())(1, 'Pedro')['status'] == 'entregue'
+
+
+def test_random_order_numbers_are_not_kept_in_memory():
+    for order_id in range(5000, 5010):
+        get_order(order_id, 'Ana')
+    assert tools.order_fails == {}
+
+
+def test_conversation_tools_have_their_own_get_order():
+    names = []
+    for tool in tools.conversation_tools():
+        names.append(tool.__name__)
+        if tool.__name__ == 'get_order':
+            assert tool is not get_order
+            assert tool.__doc__ == get_order.__doc__
+    assert names == ['search_products', 'active_promotions', 'get_order', 'installment_options', 'search_policies']
 
 
 def test_cancelled_order_has_reason():
