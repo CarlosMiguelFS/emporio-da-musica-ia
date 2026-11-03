@@ -5,7 +5,7 @@ from google import genai
 from google.genai import types
 
 from emporio import guardrails
-from emporio.cart import Cart, cart_tools, categories_in
+from emporio.cart import Cart, brand_in, budget_in, cart_tools, categories_in, items_not_sold
 from emporio.observability import describe_error, log_turn, safe_args
 from emporio.prompt import build_prompt
 from emporio.settings import STORE_PHONE
@@ -17,12 +17,10 @@ MAX_TOOL_CALLS = 5
 MAX_OUTPUT_TOKENS = 800
 SEED = 42
 
-# overloaded, rate limited or retired model: worth trying the next one.
-# 401/402/403 are account problems, switching model doesn't help.
+# overloaded, rate limited or retired model: try the next one (401/402/403 are account problems)
 FALLBACK_CODES = [404, 429, 500, 502, 503, 504]
 
-# the only thing the customer sees when something breaks. The real reason goes to logs/ only:
-# error details on screen tell an attacker what is behind the agent.
+# what the customer sees when something breaks, the real reason goes to logs/
 ERROR_REPLY = f'Tive um problema técnico agora. Tenta de novo em instantes ou fala com a equipe no {STORE_PHONE}.'
 
 # sent to the model (never shown to the customer) when it quotes a price that no tool returned
@@ -32,15 +30,14 @@ PRICE_RETRY_NOTE = (
     'the values the tool returns.'
 )
 
-# the model once called the tools and sent no text at all
+# the model once called the tools and sent no text
 EMPTY_ANSWER_NOTE = (
     "[internal check, not from the customer] Your last answer had no text. Answer the customer's "
     'last message now, using the tool results you already have.'
 )
 EMPTY_REPLY = 'Desculpa, me enrolei aqui. Pode mandar sua pergunta de novo?'
 
-# the 30 messages limit is per conversation, and a new tab is a new conversation.
-# This one counts the whole server, so nobody runs up the API bill opening tabs
+# counts the whole server: a new tab is a new conversation, so the 30 messages aren't enough
 MAX_MESSAGES_PER_MINUTE = 60
 BUSY_REPLY = f'Estou com muitas conversas agora. Tenta de novo em um minutinho ou fala com a equipe no {STORE_PHONE}.'
 recent_messages = []
@@ -49,7 +46,7 @@ _client = None
 
 
 def get_client():
-    # one client for the whole run: if it gets garbage collected it closes the connection the chat uses
+    # one client for the whole run, otherwise the chat loses its connection
     global _client
     if _client is None:
         _client = genai.Client()
@@ -88,8 +85,7 @@ def build_config(model, tools=None):
 
 
 class Conversation:
-    # Gemini chat that jumps to the next model in MODELS when the current one is down.
-    # The history goes along, so the customer doesn't notice the switch.
+    # Gemini chat that moves to the next model in MODELS when one is down, with the history
 
     def __init__(self, models):
         self.models = models
@@ -136,9 +132,7 @@ def new_chat():
 
 
 def last_turn_parts(history):
-    # the tool calls are read from the chat history: in google-genai 2.x the response's
-    # automatic_function_calling_history comes empty in chats, and the price guardrail
-    # was blocking correct prices because it couldn't see the tool results
+    # the SDK doesn't return the tool calls in chats, so they are read from the history
     parts = []
     for content in history:
         for part in content.parts or []:
@@ -165,8 +159,7 @@ def format_call(call):
 
 
 def ask(chat, text, customer_message):
-    # prices are checked against every tool result in the conversation,
-    # so a price confirmed two messages ago can still be repeated
+    # checked against every tool result of the chat, so an earlier price can be repeated
     response = chat.send_message(text)
     history = chat.get_history()
 
@@ -183,9 +176,7 @@ def ask(chat, text, customer_message):
 
 
 def show_promised_catalog(chat, calls, answer, message=''):
-    # In tests the answer said "separei no catálogo" or "vou abrir o catálogo" but no catalog was
-    # made, so the customer saw nothing. If the answer talks about the catalog and none was made,
-    # the code makes it: from the same search, or from the instruments the customer named.
+    # the answer talks about a catalog but none was made: make it from the search or the customer words
     cart = getattr(chat, 'cart', None)
     if not cart or 'catalogo' not in normalize(answer):
         return False
@@ -194,20 +185,35 @@ def show_promised_catalog(chat, calls, answer, message=''):
         if call.name == 'show_catalog':
             return False
 
+    # same filters as the normal path: category, brand and budget from the search, or from the customer
     for call in calls:
         if call.name != 'search_products':
             continue
         args = call.args or {}
-        category = args.get('category') or args.get('term') or ''
-        result = cart.catalog(category, '', '', args.get('max_price') or 0)
+        term = args.get('term') or ''
+        category = args.get('category') or ', '.join(categories_in(term + ' ' + message))
+        brand = brand_in(term) or brand_in(message)
+        max_price = args.get('max_price') or budget_in(message)
+        result = cart.catalog(category, '', brand, max_price)
         if result.get('total'):
             return True
 
     categories = categories_in(message)
     if categories:
-        result = cart.catalog(', '.join(categories), '', '', 0)
+        result = cart.catalog(', '.join(categories), '', brand_in(message), budget_in(message))
         return bool(result.get('total'))
     return False
+
+
+def say_what_is_missing(answer, message):
+    # "uma guitarra, uma bateria e um surdo": the answer has to say there is no surdo
+    missing = []
+    for item in items_not_sold(message):
+        if item.replace('-', ' ') not in normalize(answer).replace('-', ' '):
+            missing.append(item)
+    if not missing:
+        return answer
+    return f"{answer}\n\nSó não temos {' nem '.join(missing)} no catálogo agora."
 
 
 def price_was_blocked(events):
@@ -237,8 +243,7 @@ def server_is_busy():
 
 
 def reply(chat, session_id, message):
-    # one customer message: guardrails -> model + tools -> guardrails -> log.
-    # Never raises: any failure becomes ERROR_REPLY plus a line in the log.
+    # guardrails -> model + tools -> guardrails -> log. Never raises
     start = time.perf_counter()
     record = {'session': session_id}
     events = []
@@ -280,6 +285,11 @@ def reply(chat, session_id, message):
 
         if show_promised_catalog(chat, calls, answer, message):
             output_events.append('catalog_added_by_code')
+
+        checked = say_what_is_missing(answer, message)
+        if checked != answer:
+            answer = checked
+            output_events.append('missing_item_added_by_code')
 
     except Exception as error:
         record['model'] = chat.model

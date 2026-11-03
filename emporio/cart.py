@@ -1,4 +1,5 @@
 import json
+import re
 import uuid
 from datetime import datetime
 from decimal import Decimal
@@ -14,6 +15,9 @@ CATEGORIES = [
     'Guitarras', 'Baixos', 'Baterias e Percussão', 'Teclados e Pianos', 'Violões',
     'Instrumentos de Sopro (Madeiras)', 'Instrumentos de Sopro (Metais)', 'Cordas Orquestrais', 'Ukuleles',
 ]
+
+# instruments customers ask for that the store doesn't sell
+NOT_SOLD = ['surdo', 'pandeiro', 'reco reco', 'cavaquinho', 'berimbau', 'gaita', 'sanfona', 'acordeon', 'harpa']
 
 # the words customers use for each category, to find what they asked for in their own message
 CATEGORY_WORDS = {
@@ -292,8 +296,7 @@ class Cart:
         return result
 
     def add_from_model(self, product_id, quantity):
-        # the customer picked on the screen in this message: everything is already in the cart.
-        # The model once "added it again" with a made-up id and a wrong product went in
+        # answering a screen pick: the products are already in the cart
         if self.picked_on_screen:
             result = self.summary()
             result['note'] = 'O cliente já colocou os produtos pela tela. Nada foi adicionado.'
@@ -395,9 +398,7 @@ class Cart:
         return items
 
     def confirm(self, by_customer=False):
-        # by_customer is the Confirmar button. The model only confirms if the cart was shown in an
-        # earlier message: without this, an injected message could make it call show_cart and
-        # confirm_order together and send an order nobody saw
+        # by_customer is the Confirmar button. The model needs the cart shown in an earlier message
         if not self.items:
             return {'error': 'O carrinho está vazio.'}
 
@@ -414,8 +415,7 @@ class Cart:
         if self.order and self.order['version'] >= MAX_VERSIONS:
             return {'error': TOO_MANY_CHANGES}
 
-        # the order only counts as sent after the team file is written. If writing fails,
-        # nothing changes and the customer can try again
+        # only counts as sent after the team file is written
         if not self.order:
             # random, so two orders in the same second don't get the same number
             number = uuid.uuid4().hex[:6].upper()
@@ -577,4 +577,38 @@ def categories_in(message):
         category = CATEGORY_WORDS.get(word)
         if category and category not in found:
             found.append(category)
+    return found
+
+
+def brand_in(text):
+    words = re.sub(r'[^a-z0-9 ]', ' ', normalize(text)).split()
+    for brand in BRANDS:
+        brand_words = normalize(brand).split()
+        for index in range(len(words)):
+            if words[index:index + len(brand_words)] == brand_words:
+                return brand
+    return ''
+
+
+def budget_in(text):
+    # "até R$ 1.000", "até 1000", "até mil", "até 2 mil"
+    text = normalize(text)
+    match = re.search(r'\bate\s*(?:r\$)?\s*(\d[\d.]*)?(?:,\d{1,2})?\s*(mil)?\b', text)
+    if not match or not (match.group(1) or match.group(2)):
+        return 0
+    number = 1
+    if match.group(1):
+        number = int(match.group(1).replace('.', ''))
+    if match.group(2):
+        number = number * 1000
+    return number
+
+
+def items_not_sold(message):
+    # instruments the store doesn't have, so the answer can say it
+    words = ' ' + re.sub(r'[^a-z ]', ' ', normalize(message).replace('-', ' ')) + ' '
+    found = []
+    for item in NOT_SOLD:
+        if f' {item} ' in words:
+            found.append(item.replace('reco reco', 'reco-reco'))
     return found

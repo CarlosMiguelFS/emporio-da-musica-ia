@@ -291,7 +291,7 @@ class ScriptedChat:
 
 
 def test_empty_answer_gets_a_second_chance(temp_logs):
-    # real bug: two tools called and no text at all, the customer got an empty bubble
+    # two tools called and no text at all, the customer got an empty bubble
     chat = ScriptedChat(['', 'Abrimos de segunda a sexta, das 9h às 18h.'])
 
     answer, _ = agent.reply(chat, 's1', 'qual o horário?')
@@ -358,7 +358,7 @@ def test_each_message_is_a_new_turn_for_the_cart(temp_logs):
 
 
 def test_answer_still_arrives_when_the_log_cant_be_written(monkeypatch, tmp_path):
-    # audit finding: a log that couldn't be written broke the answer
+    # a log that couldn't be written broke the answer
     not_a_folder = tmp_path / 'logs'
     not_a_folder.write_text('a file where the folder should be', encoding='utf-8')
     monkeypatch.setattr(observability, 'LOG_DIR', not_a_folder)
@@ -374,7 +374,7 @@ class FakeCall:
 
 
 def test_catalog_the_answer_talks_about_is_really_shown():
-    # audit finding: "separei no catálogo" but the model only called search_products: no catalog
+    # "separei no catálogo" but the model only called search_products: no catalog
     from emporio.cart import Cart
 
     chat = ScriptedChat([])
@@ -398,7 +398,7 @@ def test_no_extra_catalog_when_the_model_made_one_or_didnt_promise_it():
 
 
 def test_catalog_promised_without_any_search_uses_what_the_customer_asked():
-    # audit finding: "vou abrir nosso catálogo" with no tool at all, and nothing on the screen
+    # "vou abrir nosso catálogo" with no tool at all, and nothing on the screen
     from emporio.cart import Cart
 
     chat = ScriptedChat([])
@@ -418,3 +418,61 @@ def test_family_or_other_words_are_not_instruments():
 
     assert categories_in('quero um violão pro meu filho, é pra família') == ['Violões']
     assert categories_in('qual o horário de vocês?') == []
+
+
+def _recovered_products(calls, answer, message):
+    from emporio.cart import Cart
+
+    chat = ScriptedChat([])
+    chat.cart = Cart()
+    agent.show_promised_catalog(chat, calls, answer, message)
+    products = []
+    for section in chat.cart.take_events()[0]['catalog']['sections']:
+        for group in section['brands']:
+            for item in group['items']:
+                products.append(item['product'])
+    return products
+
+
+def test_recovered_catalog_keeps_the_brand_and_the_budget():
+    search = FakeCall('search_products', {'term': 'yamaha', 'category': 'Violões', 'max_price': 1000})
+    products = _recovered_products([search], 'Separei no catálogo!', 'violão yamaha até R$ 1.000')
+    assert products
+    for product in products:
+        assert 'Yamaha' in product['name']
+        assert product['price'] <= 1000
+
+
+def test_recovered_catalog_from_the_customer_words_keeps_the_filters_too():
+    products = _recovered_products([], 'Vou te mostrar no catálogo!', 'tem violão yamaha até mil reais?')
+    assert products
+    for product in products:
+        assert 'Yamaha' in product['name']
+        assert product['price'] <= 1000
+
+
+def test_recovered_catalog_never_goes_over_the_budget():
+    products = _recovered_products([], 'Separei no catálogo!', 'quais violões até R$ 1000?')
+    assert len(products) == 12
+    for product in products:
+        assert product['price'] <= 1000
+
+
+def test_recovered_catalog_is_the_same_as_the_normal_one():
+    from emporio.cart import Cart
+
+    normal = Cart()
+    normal.catalog('Violões', '', 'Yamaha', 1000)
+    expected = normal.take_events()[0]['catalog']['total']
+
+    search = FakeCall('search_products', {'term': 'yamaha', 'category': 'Violões', 'max_price': 1000})
+    assert len(_recovered_products([search], 'Separei no catálogo!', 'violão yamaha até 1000')) == expected
+
+
+def test_answer_says_which_instrument_the_store_does_not_have():
+    message = 'quero uma guitarra, uma bateria e um surdo'
+    answer = agent.say_what_is_missing('Separei as guitarras e baterias no catálogo!', message)
+    assert answer.endswith('Só não temos surdo no catálogo agora.')
+    # already said: nothing is added
+    said = 'Não temos surdo no catálogo agora, mas separei guitarras e baterias.'
+    assert agent.say_what_is_missing(said, message) == said
