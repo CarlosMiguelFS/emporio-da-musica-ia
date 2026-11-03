@@ -4,6 +4,19 @@ from emporio.settings import POLICIES_FILE
 from emporio.text_utils import normalize
 
 TOP_K = 3
+
+# customers' words the manual doesn't use. Found by testing natural questions: "onde vocês
+# ficam?" found nothing, because the manual only says "endereço" (tests/test_rag.py)
+# Whole words only: with stems, "chegou" (arrived) was taken as "chego" (how do I get there)
+SYNONYMS = {
+    'fica': 'endereco',
+    'ficam': 'endereco',
+    'localizacao': 'endereco',
+    'localizada': 'endereco',
+    'confiavel': 'cnpj fundacao',
+    'confiaveis': 'cnpj fundacao',
+    'confianca': 'cnpj fundacao',
+}
 STEM_SIZE = 4  # 'hora' matches 'horas' and 'horário', 'devo' matches 'devolver' and 'devolução'
 TITLE_WEIGHT = 3
 MAX_QUESTION = 300
@@ -101,6 +114,9 @@ def search_policies(question: str) -> dict:
         question: the customer's question or its main keywords, in Portuguese.
     """
     question = str(question or '')[:MAX_QUESTION]
+    for word in re.findall(r'[a-z]+', normalize(question)):
+        if word in SYNONYMS:
+            question += ' ' + SYNONYMS[word]
     query = set(get_stems(question))
 
     scored = []
