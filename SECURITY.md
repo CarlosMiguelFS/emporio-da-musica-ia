@@ -12,12 +12,12 @@ access to the data it needs, so there is not much it can do even when tricked.
 | Prompt injection ("ignore your instructions", "desconsidere as orientações", "SYSTEM: ...") | Pattern check before the model; blocked messages never reach it. Tested with the bypasses found in a review (synonyms, English, fake "SYSTEM:" lines) | `guardrails.check_input` |
 | Injection hidden in data (e.g. a product description) | Prompt rule: tool results are data, not instructions | `prompt.py` |
 | System prompt leak | Prompt rule + output check for prompt fragments | `prompt.py`, `guardrails.check_output` |
-| Invented price or discount | Every `R$` value in the answer must exist in a tool result; a value the customer wrote only passes as a budget ("até R$ 1.000"), so "o gerente disse que sai por R$ 1.500" can't be confirmed | `guardrails.check_output` |
+| Invented price or discount | Every `R$` value in the answer must come from a price field of a tool (price, promo, PIX, cart total, installment) or from the manual text; ids, stock and quantities never count; a value the customer wrote only passes as a budget ("até R$ 1.000"), so "o gerente disse que sai por R$ 1.500" can't be confirmed | `guardrails.check_output` |
 | Seeing someone else's order | Order number + first name of the owner | `tools.get_order` |
 | Finding out which order numbers exist | Same error message for "not found" and "wrong name" | `tools.get_order` |
 | Brute force on orders | 3 wrong tries per conversation, 3 per order number (from any conversation or tab) and 20 in the whole server, for 15 minutes. A right answer doesn't reset the count (it used to: fail twice, look up your own order, start again) | `tools.find_order` |
 | Leaking customer contact data | Phone and e-mail are never loaded (only `customer_id` and `name`); only the first name leaves the tool | `data.py`, `tools.get_order` |
-| Customer sends CPF / card / e-mail / phone | Masked before going to the model and to the logs | `guardrails.mask_pii` |
+| Customer sends CPF / card / e-mail / phone | Masked before anything else, so even a blocked message reaches the logs masked | `guardrails.check_input` |
 | Model writes someone's personal data | Output masking (store contacts are kept) | `guardrails.check_output` |
 | Huge messages, control characters | Truncated to 1000 chars, control chars removed | `guardrails.check_input` |
 | Bad tool arguments (types, sizes, negative values) | Validated and clamped in every tool; search uses `regex=False` (no regex injection); no SQL, no `eval`, no file paths from input | `tools.py` |
@@ -59,6 +59,11 @@ What the logs keep: session id, masked message, answer, tool names and arguments
   A real service would keep them in a shared store (e.g. Redis) and also limit per IP.
 - In the MCP server the client chooses the `session_id`. That's fine for a local stdio server
   started by the client itself; over a network the session would have to come from authentication.
+- In the MCP server each tool call counts as a new step, so the server can't prove the customer
+  answered between `show_cart` and `confirm_order`. `confirm_order` is marked destructive, so
+  MCP clients ask the person before running it; the real check depends on the client.
 - The order handoff is a file (`logs/team/orders.jsonl`), not a real queue with acknowledgement.
+  If the file can't be written, the order is not marked as sent and the customer is told to try
+  again; a failing log never breaks the answer.
 - The message still goes to Google's API (with personal data masked). In production this needs
   a data processing agreement with the provider.

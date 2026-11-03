@@ -60,7 +60,7 @@ customer message
 │   ├── guardrails.py   input and output checks
 │   └── observability.py, data.py, settings.py, chat_ui.py, text_utils.py
 ├── data/               the CSVs and the manual as received, plus politicas.md (manual as text)
-├── tests/              159 tests, no API needed
+├── tests/              175 tests, no API needed
 ├── evals/              real conversations against the model and the last report
 └── conversations/      5 example conversations
 ```
@@ -83,11 +83,12 @@ customer message
   the policies, and that shows up in the logs.
 - **Keyword retrieval, not embeddings.** The manual has 25 sections: keywords are enough, have no
   extra cost and always give the same result, which makes them easy to test.
-- **Calculations in Python.** Discounts, PIX price, installments, days since delivery and cart
-  totals use `Decimal` in the code. A wrong price is what the manual most wants to avoid (7.1),
-  so the output guardrail blocks any value no tool returned.
+- **Calculations in Python.** Discounts, PIX price, installments, days for the return window and
+  cart totals are computed in the code. A wrong price is what the manual most wants to avoid (7.1),
+  so the output guardrail blocks any value that didn't come from a price field of a tool.
 - **Gemini Flash-Lite** (`google-genai`): cheap, fast, good Portuguese, function calling. A model
-  list with fallback, because a model was retired for new keys during development.
+  list with fallback, because a model was retired for new keys during development. `MODELS`
+  switches between Gemini models only: another provider would need a small adapter in `agent.py`.
 - **Low variation:** temperature 0, fixed seed, minimal thinking, 800 output tokens.
 - **Prompt:** instructions in English, answers in Portuguese. Persona from the manual (7.1), warm
   and short for a phone chat, one question per message, at most one recommendation taken from the
@@ -106,11 +107,11 @@ customer message
 
 ## Evaluation
 
-Unit tests check the code; they can't tell if the model behaves. `evals/` runs 35 real
+Unit tests check the code; they can't tell if the model behaves. `evals/` runs 36 real
 conversations against the model and checks each answer: the tools it should (and shouldn't) call,
 what the answer must (and must not) contain, chat rules (one question, short, Brazilian price
 format, no emojis), the cart contents and that no order is sent without confirmation.
-Last run: 34 of 35 cases passed. The miss was real: in one complaint the answer gave the contacts but not the 24 business hours the manual promises ([report](evals/results/latest.md)).
+Last run: 36 of 36 cases passed ([report](evals/results/latest.md)). The run before had one miss, a complaint answer without the 24 business hours the manual promises; nothing was changed for it, so it is model variation, and that case is worth watching.
 
 The evaluation caught real problems: promotions without the discount percent, prices without the
 thousands separator, the store's own e-mail being masked, products listed twice (text and
@@ -123,9 +124,12 @@ a screen pick twice and a cold, ticket-closing tone. Each one became a test or a
   what needs a person: payment links, complaints, defects, anything it can't confirm.
 - **Language:** code and docs in English (submission instructions), chat in Portuguese (the store,
   its customers and the manual are in Portuguese).
-- **Order access:** order number + first name of the buyer (manual section 9). Not real
-  authentication; see Limitations.
-- **Return window:** the data has no real delivery date, so `estimated_delivery` is used.
+- **Order access:** order number + first name of the buyer (manual section 9). This is not
+  authentication: it is fine for a prototype with fictional data, not for real customer data.
+- **Return window:** the data only has the estimated delivery, not the day the customer got it.
+  The agent never uses the forecast as the real date: for a return by regret (7 days) it asks the
+  day they received it and counts in Python; defects (30 days) count from the purchase date.
+  The team always confirms the return.
 - **Installments:** the detailed rules in 3.1 (R$ 50 minimum up to 3x) win over the summary table.
 - **Contacts:** the manual has two phones and two spellings of the e-mail. The agent uses
   (67) 3341-4444, which appears twice, and the e-mail without accent.
@@ -140,7 +144,10 @@ a screen pick twice and a cold, ticket-closing tone. Each one became a test or a
 
 ## Limitations and next steps
 
-- First name is not authentication. Next: a code sent to the customer's registered phone.
+- First name is not authentication, so this must not serve real customer data as it is. Next:
+  a code sent to the customer's registered phone.
+- In the MCP server, the server can't tell if the customer answered between `show_cart` and
+  `confirm_order`; it marks `confirm_order` as destructive so the client asks the person.
 - Injection detection is pattern-based; the other layers limit the damage (see SECURITY.md).
 - Limits (order tries, messages per minute) live in memory and reset on restart. Next: Redis and
   a limit per IP.
@@ -166,6 +173,7 @@ agreed after going through the trade-offs. What came from my side:
 - The question that shaped the MCP part: "would this work where there are no buttons?"
 - A security review that I asked for after the features were done. It found an order lookup
   brute force, the model being able to confirm an order alone, and a price trick; all fixed, with
-  a test for each attack.
+  a test for each attack. A second, independent audit (ChatGPT) found six more issues, like ids
+  passing as prices and the return window using the forecast date; I reproduced and fixed them.
 - Before each commit, I had the assistant replay the commit order in a copy of the repository and
   run the tests at every step.
